@@ -108,6 +108,32 @@ npm run seed        # creates security1 / manager1 / board1  (pw: changeme123)
 npm start           # http://localhost:3000
 ```
 
+### One-click launch on Windows
+
+After the one-time setup (install deps, create the database, `.env`, migrate,
+seed), you can start the app by **double-clicking `start.bat`**. It changes into
+the project folder, starts the server, and opens `http://localhost:3000` in your
+browser. Close the window or press `Ctrl+C` to stop.
+
+### Access from other machines on the LAN
+
+The server already listens on all network interfaces, so other devices on the
+same network (e.g. the security desk) can reach it once the firewall allows the
+port:
+
+```powershell
+# Run once, in an Administrator PowerShell:
+New-NetFirewallRule -DisplayName "Parking Pass System (3000)" `
+  -Direction Inbound -Protocol TCP -LocalPort 3000 -Action Allow
+
+# Find this machine's LAN address:
+ipconfig   # look for "IPv4 Address", e.g. 192.168.1.42
+```
+
+Other machines then browse to `http://<that-ip>:3000`. This runs over plain
+HTTP on the local network — fine for a trusted LAN, but put it behind HTTPS (a
+reverse proxy such as Caddy or nginx) before exposing it beyond that.
+
 ### Running the test suite
 
 `npm test` runs an end-to-end integration suite (`test/integration.test.js`,
