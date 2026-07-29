@@ -21,13 +21,15 @@ const config = require('./../config');
  * }}
  */
 async function evaluateQuota(client, unitId, year) {
-  // Lock the unit's pass rows for this year to prevent a concurrent double-issue
-  // race from both reading "9 used" and both inserting a 10th+11th pass.
+  // Serialize concurrent issuance for this unit by taking a row lock on the
+  // unit itself. (FOR UPDATE cannot be combined with an aggregate query, so we
+  // lock the parent row instead of the counted pass rows — this still forces
+  // two simultaneous issue requests for the same unit to run one-at-a-time.)
+  await client.query(`SELECT id FROM units WHERE id = $1 FOR UPDATE`, [unitId]);
   const usedRes = await client.query(
     `SELECT COUNT(*)::int AS used
        FROM visitor_passes
-      WHERE unit_id = $1 AND calendar_year = $2 AND status <> 'revoked'
-      FOR UPDATE`,
+      WHERE unit_id = $1 AND calendar_year = $2 AND status <> 'revoked'`,
     [unitId, year]
   );
   const used = usedRes.rows[0].used;

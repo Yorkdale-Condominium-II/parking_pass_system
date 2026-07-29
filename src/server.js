@@ -1,5 +1,6 @@
 'use strict';
 const path = require('path');
+require('express-async-errors'); // route async throws to the error handler (Express 4)
 const express = require('express');
 const helmet = require('helmet');
 const cookieParser = require('cookie-parser');
