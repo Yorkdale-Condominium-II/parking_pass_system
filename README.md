@@ -108,6 +108,25 @@ npm run seed        # creates security1 / manager1 / board1  (pw: changeme123)
 npm start           # http://localhost:3000
 ```
 
+### Running the test suite
+
+`npm test` runs an end-to-end integration suite (`test/integration.test.js`,
+Node's built-in test runner) that boots the app in-process and exercises auth +
+RBAC, plate lookup, the 10-pass quota + Management override, barcode
+issue/verify (genuine / forged / expired / revoked), the audit log, and the
+print sheet.
+
+The suite **truncates tables**, so point it at a dedicated database:
+
+```bash
+createdb parking_pass_test
+TEST_DATABASE_URL=postgres://user:pass@localhost:5432/parking_pass_test npm test
+```
+
+If `TEST_DATABASE_URL` is unset it falls back to `DATABASE_URL` — don't do that
+against a database whose data you want to keep. The suite applies the schema
+itself, so no separate migrate step is needed.
+
 ---
 
 ## 7. API surface (summary)
