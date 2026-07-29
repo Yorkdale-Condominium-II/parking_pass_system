@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Yorkdale Condominium II — Parking Management</title>
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<header id="topbar" hidden>
+  <div class="brand">🅿️ Yorkdale Condominium II</div>
+  <nav id="nav"></nav>
+  <div class="who"><span id="whoami"></span> <button id="logoutBtn">Log out</button></div>
+</header>
+
+<main id="app">
+  <!-- Login -->
+  <section id="view-login" class="view card">
+    <h1>Parking Management Login</h1>
+    <form id="loginForm">
+      <label>Username <input name="username" autocomplete="username" required></label>
+      <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
+      <button type="submit">Sign in</button>
+      <p class="error" id="loginError"></p>
+    </form>
+    <p class="hint">Seeded demo logins — security1 / manager1 / board1 (password: changeme123)</p>
+  </section>
+
+  <!-- Security / Management: Lookup -->
+  <section id="view-lookup" class="view" hidden>
+    <h1>Licence Plate Lookup</h1>
+    <form id="lookupForm" class="inline">
+      <input name="plate" placeholder="Enter plate, e.g. ABCD123" required>
+      <button>Search</button>
+    </form>
+    <div id="lookupResult"></div>
+  </section>
+
+  <!-- Security / Management: Issue -->
+  <section id="view-issue" class="view" hidden>
+    <h1>Issue Visitor Pass</h1>
+    <form id="issueForm" class="card">
+      <label>Unit number <input name="unitNumber" required></label>
+      <label>Visitor plate <input name="visitorPlate" required></label>
+      <label>Visitor name <input name="visitorName"></label>
+      <label>Duration (hours) <input name="durationHours" type="number" value="24" min="1"></label>
+      <label class="check" id="overrideWrap" hidden>
+        <input type="checkbox" name="override"> Override annual quota (Management)
+      </label>
+      <label id="overrideReasonWrap" hidden>Override reason <input name="overrideReason"></label>
+      <button type="submit">Issue pass</button>
+      <p class="error" id="issueError"></p>
+    </form>
+    <div id="issueResult"></div>
+  </section>
+
+  <!-- Security / Management: Verify -->
+  <section id="view-verify" class="view" hidden>
+    <h1>Verify Pass</h1>
+    <form id="verifyForm" class="card">
+      <label>Scan or paste barcode token
+        <textarea name="token" rows="3" placeholder="PPV1...." required></textarea>
+      </label>
+      <button type="submit">Verify</button>
+    </form>
+    <div id="verifyResult"></div>
+  </section>
+
+  <!-- Management: Admin -->
+  <section id="view-admin" class="view" hidden>
+    <h1>Management Console</h1>
+    <div class="cols">
+      <form id="userForm" class="card">
+        <h2>Create user</h2>
+        <label>Username <input name="username" required></label>
+        <label>Full name <input name="fullName" required></label>
+        <label>Role
+          <select name="role"><option value="security">Security</option><option value="management">Management</option><option value="board">Board</option></select>
+        </label>
+        <label>Password <input name="password" type="password" required></label>
+        <button>Create</button>
+        <p class="msg" id="userMsg"></p>
+      </form>
+      <form id="unitForm" class="card">
+        <h2>Add unit</h2>
+        <label>Unit number <input name="unitNumber" required></label>
+        <label>Floor <input name="floor" type="number"></label>
+        <button>Add unit</button>
+        <p class="msg" id="unitMsg"></p>
+      </form>
+    </div>
+    <h2>Audit log</h2>
+    <button id="refreshAudit">Refresh</button>
+    <div id="auditTable"></div>
+  </section>
+
+  <!-- Board: Dashboard -->
+  <section id="view-board" class="view" hidden>
+    <h1>Board Dashboard</h1>
+    <div id="boardSummary"></div>
+  </section>
+</main>
+
+<script src="/app.js"></script>
+</body>
+</html>

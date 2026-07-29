@@ -1,0 +1,137 @@
+# Yorkdale Condominium II — Parking Pass System
+
+An all-in-one property-management web application that centralizes **visitor
+parking administration**, **resident vehicle registration**, and
+**operational oversight** across three roles: **Security**, **Management**, and
+the **Board of Directors**.
+
+---
+
+## 1. Recommended tech stack
+
+| Layer | Choice | Why |
+|-------|--------|-----|
+| Front-end | Vanilla SPA (served static) | Zero build step; swap for **React/Next.js** as the UI grows |
+| Back-end API | **Node.js + Express** | Fast to build, huge ecosystem, easy to containerize |
+| Database | **PostgreSQL** | Strong relational integrity, `FOR UPDATE` locking for quota races, JSONB audit detail |
+| Auth | **JWT** (httpOnly cookie) + **bcrypt** | Stateless sessions, hashed passwords |
+| Barcode | **QR (Code-128 capable)** + **HMAC-SHA256** | Signed, tamper-evident payload |
+
+This repo ships the vanilla SPA to stay dependency-light and instantly runnable.
+The API is a clean JSON boundary, so migrating the front-end to Next.js later
+requires no back-end changes.
+
+---
+
+## 2. Cryptographic barcode strategy
+
+The barcode is **not plain text**. Each pass encodes a signed token:
+
+```
+PPV1.<base64url(payload)>.<base64url(HMAC-SHA256(payload))>
+payload = { v, pid, unit, plate, iat, exp }
+```
+
+* The HMAC is computed with a **server-only secret** (`BARCODE_SECRET`). A
+  resident cannot forge or edit a pass because they cannot produce a valid
+  signature.
+* Verification is **constant-time** (`crypto.timingSafeEqual`) to avoid timing
+  attacks.
+* Signature authenticity is only half the check — verification also reconciles
+  against live DB state to detect **expired** and **revoked** passes.
+
+Verdicts returned to Security: `VALID`, `EXPIRED`, `REVOKED`, `FORGED`,
+`INVALID`. See `src/crypto/barcode.js` and `src/services/passService.js`.
+
+---
+
+## 3. Database schema
+
+Full DDL in [`db/schema.sql`](db/schema.sql). Core relationships:
+
+```
+units 1─* residents
+units 1─* registered_vehicles ─? residents
+units 1─* visitor_passes ─* pass_audit_log
+units 1─* override_grants
+users  ─* (issued_by / granted_by / actor)
+```
+
+Key rule enforced in SQL + service layer: **max 10 visitor passes per unit per
+calendar year** (`ANNUAL_PASS_QUOTA`), raised only by a Management
+`override_grant`. Revoked passes do not count.
+
+---
+
+## 4. Quota + override logic
+
+`src/services/quota.js` and `src/services/passService.js`:
+
+* Issuance runs inside a transaction; `SELECT ... FOR UPDATE` locks the unit's
+  yearly pass rows so two simultaneous requests can't both slip past the 10th.
+* At the limit, issuance is **blocked** — unless the issuer is **Management**
+  and supplies `override: true` with a reason, which records an `override_grant`
+  and an audit entry.
+
+---
+
+## 5. Print-ready 8.5 × 11 pass
+
+`GET /api/passes/:id/print` returns a self-contained HTML sheet
+(`src/services/printTemplate.js`) with an `@page { size: 8.5in 11in }` rule and:
+
+* Prominent **expiry date/time** (highlighted red) and **issuance date/time**
+* **Issuer name + role**
+* **Unit number** and **visitor licence plate**
+* Embedded **signed QR code** (data-URI, no external requests)
+
+Open it in a browser and hit **Print**.
+
+---
+
+## 6. Running locally
+
+```bash
+# 1. Install
+npm install
+
+# 2. Configure
+cp .env.example .env
+#   -> set JWT_SECRET and BARCODE_SECRET (openssl rand -hex 32)
+#   -> point DATABASE_URL at a running PostgreSQL
+
+# 3. Create schema + demo data
+npm run migrate
+npm run seed        # creates security1 / manager1 / board1  (pw: changeme123)
+
+# 4. Start
+npm start           # http://localhost:3000
+```
+
+---
+
+## 7. API surface (summary)
+
+| Method | Path | Roles | Purpose |
+|--------|------|-------|---------|
+| POST | `/api/auth/login` | any | Sign in |
+| GET  | `/api/passes/lookup?plate=` | security, management | Plate lookup |
+| POST | `/api/passes` | security, management | Issue pass (override = mgmt) |
+| GET  | `/api/passes/:id/print` | security, management | Printable sheet |
+| POST | `/api/passes/:id/revoke` | security, management | Revoke |
+| POST | `/api/verify` | security, management | Verify barcode token |
+| POST | `/api/admin/users` · `/units` · `/overrides` | management | Admin |
+| GET  | `/api/admin/audit` | management | Audit log |
+| GET  | `/api/board/summary` | board, management | Aggregate analytics (no PII) |
+
+---
+
+## 8. Security notes
+
+* Passwords hashed with bcrypt (cost 12); login is rate-limited and
+  timing-uniform.
+* Sessions are httpOnly, `SameSite=strict`, `Secure` in production.
+* Board role is structurally denied resident PII and plate data — its endpoint
+  only returns aggregates.
+* Barcode secret is distinct from the JWT secret so rotating one doesn't
+  invalidate the other.
