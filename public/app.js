@@ -635,9 +635,16 @@ async function loadSpots() {
         <button type="button" class="danger" data-action="cancel" data-id="${p.id}">Cancel pass</button>
       </div>
     </div>`).join('') : '<p>No spaces occupied right now.</p>';
-  $('#spotsUpcoming').innerHTML = s.upcoming.length ? `<table><tr><th>Starts</th><th>Unit</th><th>Plate</th><th>Until</th><th>Authorized by</th></tr>` +
-    s.upcoming.map((p) => `<tr><td>${new Date(p.starts_at).toLocaleString()}</td><td>${p.unit_number}</td><td>${p.visitor_plate}</td><td>${new Date(p.expires_at).toLocaleString()}</td><td>${p.authorized_by || '—'}</td></tr>`).join('') + `</table>` : '<p>Nothing scheduled.</p>';
+  $('#spotsUpcoming').innerHTML = s.upcoming.length ? `<table><tr><th>Starts</th><th>Unit</th><th>Plate</th><th>Until</th><th>Authorized by</th><th></th></tr>` +
+    s.upcoming.map((p) => `<tr><td>${new Date(p.starts_at).toLocaleString()}</td><td>${p.unit_number}</td><td>${p.visitor_plate}</td><td>${new Date(p.expires_at).toLocaleString()}</td><td>${p.authorized_by || '—'}</td><td><button type="button" class="danger" data-action="cancel" data-id="${p.id}">Cancel</button></td></tr>`).join('') + `</table>` : '<p>Nothing scheduled.</p>';
 }
+$('#spotsUpcoming').addEventListener('click', async (e) => {
+  const btn = e.target.closest('button[data-action="cancel"]');
+  if (!btn) return;
+  if (!confirm('Cancel this scheduled pass? It will no longer be valid.')) return;
+  await api(`/passes/${btn.dataset.id}/revoke`, { method: 'POST' });
+  loadSpots();
+});
 $('#spotsLive').addEventListener('click', async (e) => {
   const btn = e.target.closest('button[data-action]');
   if (!btn) return;

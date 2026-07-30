@@ -360,6 +360,13 @@ test('scheduling a non-overlapping window avoids the live cap', async () => {
   const row = spots.body.upcoming.find((p) => p.visitor_plate === 'SCHED1');
   assert.ok(row, 'scheduled pass should appear in the upcoming list');
   assert.equal(row.authorized_by, 'Sam Security');
+
+  // A scheduled pass can be cancelled (revoked) and then drops off the list.
+  const cancel = await c('POST', `/api/passes/${row.id}/revoke`);
+  assert.equal(cancel.status, 200);
+  const after = await c('GET', '/api/spots');
+  assert.ok(!after.body.upcoming.some((p) => p.visitor_plate === 'SCHED1'),
+    'cancelled scheduled pass should no longer be listed');
 });
 
 test('vacating a spot frees capacity for the next guest', async () => {
