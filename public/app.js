@@ -306,6 +306,9 @@ $('#issueForm').onsubmit = async (e) => {
     override: f.get('override') === 'on',
     overrideCode: f.get('overrideCode'),
     overrideReason: f.get('overrideReason'),
+    ownerName: f.get('ownerName'),
+    ownerPhone: f.get('ownerPhone'),
+    ownerEmail: f.get('ownerEmail'),
   };
   try {
     let r;
@@ -567,7 +570,7 @@ function renderUnitsTable() {
   $('#unitsCount').textContent = `${rows.length} unit${rows.length === 1 ? '' : 's'}${q ? ` (of ${allUnits.length})` : ''}`;
   if (!rows.length) { $('#unitsTable').innerHTML = '<p>No units yet. Add one above or bulk-import.</p>'; return; }
   $('#unitsTable').innerHTML = '<div style="overflow-x:auto"><table>'
-    + '<tr><th>Unit</th><th>Floor</th><th>Type</th><th>Business</th><th>Owner</th><th>Owner phone</th><th>Owner email</th></tr>'
+    + '<tr><th>Unit</th><th>Floor</th><th>Type</th><th>Business</th><th>Owner</th><th>Owner phone</th><th>Owner email</th><th></th></tr>'
     + rows.map((u) => `<tr>
         <td>${u.unit_number}</td>
         <td>${u.floor ?? '—'}</td>
@@ -576,12 +579,50 @@ function renderUnitsTable() {
         <td>${u.owner_name || '—'}</td>
         <td>${u.owner_phone || '—'}</td>
         <td>${u.owner_email || '—'}</td>
+        <td><button type="button" data-edit-unit="${u.unit_number}">Edit</button></td>
       </tr>`).join('') + '</table></div>';
 }
 const _refreshUnits = $('#refreshUnits');
 if (_refreshUnits) _refreshUnits.onclick = loadUnitsList;
 const _unitsFilter = $('#unitsFilter');
 if (_unitsFilter) _unitsFilter.addEventListener('input', renderUnitsTable);
+
+// Open the inline editor for a unit.
+const _unitsTable = $('#unitsTable');
+if (_unitsTable) _unitsTable.addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-edit-unit]');
+  if (!btn) return;
+  const u = allUnits.find((x) => x.unit_number === btn.dataset.editUnit);
+  if (!u) return;
+  const f = $('#unitEditForm');
+  $('#unitEditNumber').textContent = u.unit_number;
+  f.dataset.unit = u.unit_number;
+  f.floor.value = u.floor ?? '';
+  f.kind.value = u.kind || 'residential';
+  f.businessName.value = u.business_name || '';
+  f.ownerName.value = u.owner_name || '';
+  f.ownerPhone.value = u.owner_phone || '';
+  f.ownerEmail.value = u.owner_email || '';
+  $('#unitEditMsg').textContent = '';
+  f.hidden = false;
+  f.scrollIntoView({ block: 'nearest' });
+});
+const _unitEditCancel = $('#unitEditCancel');
+if (_unitEditCancel) _unitEditCancel.onclick = () => { $('#unitEditForm').hidden = true; };
+const _unitEditForm = $('#unitEditForm');
+if (_unitEditForm) _unitEditForm.onsubmit = async (e) => {
+  e.preventDefault();
+  const f = e.target;
+  const g = new FormData(f);
+  try {
+    await api(`/admin/units/${encodeURIComponent(f.dataset.unit)}`, { method: 'PATCH', body: {
+      floor: g.get('floor'), kind: g.get('kind'), businessName: g.get('businessName'),
+      ownerName: g.get('ownerName'), ownerPhone: g.get('ownerPhone'), ownerEmail: g.get('ownerEmail'),
+    } });
+    f.hidden = true;
+    loadUnitsList();
+  } catch (err) { $('#unitEditMsg').textContent = err.message; }
+};
 
 // Holds a selected Excel workbook (base64) until import; CSV/text files are
 // previewed in the textarea instead.

@@ -148,6 +148,13 @@
       <label>Schedule for later (optional) <input type="datetime-local" name="startsAt" id="startsAt"></label>
       <small class="hint">Leave blank to start now. The duration above is measured from the start time.</small>
 
+      <details style="margin-top:12px">
+        <summary class="hint">Unit owner contact (optional) — saved to the unit</summary>
+        <label>Owner name <input name="ownerName"></label>
+        <label>Owner phone <input name="ownerPhone"></label>
+        <label>Owner email <input name="ownerEmail" type="email"></label>
+      </details>
+
       <label class="check" id="overrideWrap">
         <input type="checkbox" name="override" id="overrideChk"> Quota override (requires this week's code)
       </label>
@@ -263,6 +270,22 @@
           <input id="unitsFilter" placeholder="Filter by unit, floor, business…" style="flex:1;min-width:180px;padding:8px;border:1px solid var(--line);border-radius:6px">
         </div>
         <p class="hint" id="unitsCount"></p>
+        <form id="unitEditForm" class="card" hidden style="background:#f6f8fa">
+          <h3 style="margin-top:0">Edit unit <span id="unitEditNumber"></span></h3>
+          <label>Floor <input name="floor" type="number"></label>
+          <label>Type
+            <select name="kind"><option value="residential">Residential</option><option value="commercial">Commercial</option></select>
+          </label>
+          <label>Business name <input name="businessName"></label>
+          <label>Owner name <input name="ownerName"></label>
+          <label>Owner phone <input name="ownerPhone"></label>
+          <label>Owner email <input name="ownerEmail" type="email"></label>
+          <div class="btn-row">
+            <button type="submit">Save</button>
+            <button type="button" id="unitEditCancel">Cancel</button>
+          </div>
+          <p class="msg" id="unitEditMsg"></p>
+        </form>
         <div id="unitsTable"></div>
       </div>
       <form id="unitImportForm" class="card">

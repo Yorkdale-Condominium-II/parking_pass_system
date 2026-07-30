@@ -5,6 +5,7 @@ const rateLimit = require('express-rate-limit');
 const db = require('./../db');
 const regions = require('./../regions');
 const { normalizePlate } = require('./../services/passService');
+const { saveUnitOwner } = require('./../services/unitOwner');
 
 const router = express.Router();
 
@@ -92,6 +93,10 @@ router.post('/requests', submitLimiter, async (req, res) => {
     }
   }
   if (!row) return res.status(500).json({ error: 'could_not_allocate_reference' });
+
+  // Capture/refresh the unit owner's contact from the requester's details.
+  await saveUnitOwner({ id: unit.rows[0].id },
+    { name: requesterName, phone: requesterContact, email });
 
   res.status(201).json({
     ok: true,

@@ -5,6 +5,7 @@ const db = require('./../db');
 const { requireAuth, requireRole } = require('./../auth/middleware');
 const passService = require('./../services/passService');
 const { renderPassSheet } = require('./../services/printTemplate');
+const { saveUnitOwner } = require('./../services/unitOwner');
 
 const router = express.Router();
 
@@ -92,6 +93,7 @@ router.post('/', requireAuth, requireRole('security', 'management'), async (req,
     unitNumber, visitorPlate, visitorFirstName, visitorLastName,
     visitorCountry, visitorRegion, durationPreset, durationHours, startsAt,
     override, overrideCode, overrideReason, spotOverride,
+    ownerName, ownerPhone, ownerEmail,
   } = req.body || {};
   if (!unitNumber || !visitorPlate) {
     return res.status(400).json({ error: 'unit_and_plate_required' });
@@ -113,6 +115,9 @@ router.post('/', requireAuth, requireRole('security', 'management'), async (req,
       overrideReason,
       spotOverride: Boolean(spotOverride),
     });
+    // Capture/refresh the unit owner's contact if the officer entered any.
+    await saveUnitOwner({ unitNumber: result.pass.unit_number },
+      { name: ownerName, phone: ownerPhone, email: ownerEmail });
     res.status(201).json({
       passId: result.pass.id,
       unitNumber: result.pass.unit_number,

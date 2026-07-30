@@ -180,8 +180,10 @@ router.get('/users/:id/history', async (req, res) => {
 // columns are placeholders until owner details are captured.
 router.get('/units', async (req, res) => {
   const r = await db.query(
-    `SELECT u.id, u.unit_number, u.floor, u.kind, u.business_name,
-            owner.full_name AS owner_name, owner.phone AS owner_phone, owner.email AS owner_email
+    `SELECT u.id, u.unit_number, u.floor, u.kind, u.business_name, u.business_contact,
+            COALESCE(u.owner_name,  owner.full_name) AS owner_name,
+            COALESCE(u.owner_phone, owner.phone)     AS owner_phone,
+            COALESCE(u.owner_email, owner.email)     AS owner_email
        FROM units u
        LEFT JOIN LATERAL (
          SELECT full_name, phone, email
@@ -194,6 +196,32 @@ router.get('/units', async (req, res) => {
       LIMIT 5000`
   );
   res.json(r.rows);
+});
+
+// Edit a unit: floor / kind / business fields and the owner contact.
+router.patch('/units/:unitNumber', async (req, res) => {
+  const { floor, kind, businessName, businessContact, ownerName, ownerPhone, ownerEmail } = req.body || {};
+  const sets = [];
+  const params = [];
+  const add = (col, val) => { params.push(val); sets.push(`${col} = $${params.length}`); };
+  if (floor !== undefined) add('floor', floor === '' || floor === null ? null : parseInt(floor, 10));
+  if (kind !== undefined) {
+    if (!['residential', 'commercial'].includes(kind)) return res.status(400).json({ error: 'invalid_kind' });
+    add('kind', kind);
+  }
+  if (businessName !== undefined) add('business_name', (businessName || '').trim() || null);
+  if (businessContact !== undefined) add('business_contact', (businessContact || '').trim() || null);
+  if (ownerName !== undefined) add('owner_name', (ownerName || '').trim() || null);
+  if (ownerPhone !== undefined) add('owner_phone', (ownerPhone || '').trim() || null);
+  if (ownerEmail !== undefined) add('owner_email', (ownerEmail || '').trim() || null);
+  if (!sets.length) return res.status(400).json({ error: 'nothing_to_update' });
+  params.push(req.params.unitNumber);
+  const r = await db.query(
+    `UPDATE units SET ${sets.join(', ')} WHERE unit_number = $${params.length} RETURNING *`,
+    params
+  );
+  if (r.rowCount === 0) return res.status(404).json({ error: 'unit_not_found' });
+  res.json(r.rows[0]);
 });
 
 router.post('/units', async (req, res) => {

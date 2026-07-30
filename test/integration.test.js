@@ -1026,6 +1026,57 @@ test('admin units list returns the registry with owner columns', async () => {
   assert.equal(denied.status, 403);
 });
 
+test('unit owner is captured from a pass issue and a resident request, and is editable', async () => {
+  const mgr = makeClient();
+  await mgr('POST', '/api/auth/login', { username: 'manager1', password: 'changeme123' });
+
+  // 1) Issuing a pass with owner fields saves them onto the unit.
+  const iss = await mgr('POST', '/api/passes', {
+    unitNumber: '0805', visitorPlate: 'OWN1',
+    ownerName: 'Olga Owner', ownerPhone: '416-555-0101', ownerEmail: 'olga@example.com',
+  });
+  assert.equal(iss.status, 201);
+  let list = await mgr('GET', '/api/admin/units');
+  let u0805 = list.body.find((u) => u.unit_number === '0805');
+  assert.equal(u0805.owner_name, 'Olga Owner');
+  assert.equal(u0805.owner_phone, '416-555-0101');
+  assert.equal(u0805.owner_email, 'olga@example.com');
+
+  // A later issue without owner fields must NOT wipe the saved owner.
+  await mgr('POST', '/api/passes', { unitNumber: '0805', visitorPlate: 'OWN2' });
+  list = await mgr('GET', '/api/admin/units');
+  assert.equal(list.body.find((u) => u.unit_number === '0805').owner_name, 'Olga Owner');
+
+  // 2) A resident request captures the requester as the owner.
+  const anon = makeClient();
+  await anon('POST', '/api/resident/requests', {
+    unitNumber: '1204', requesterName: 'Rhea Resident', requesterContact: '647-555-0200',
+    requesterEmail: 'rhea@example.com', visitorPlate: 'OWNREQ',
+  });
+  list = await mgr('GET', '/api/admin/units');
+  const u1204 = list.body.find((u) => u.unit_number === '1204');
+  assert.equal(u1204.owner_name, 'Rhea Resident');
+  assert.equal(u1204.owner_phone, '647-555-0200');
+  assert.equal(u1204.owner_email, 'rhea@example.com');
+
+  // 3) The owner is editable via PATCH.
+  const edit = await mgr('PATCH', '/api/admin/units/0805', {
+    ownerName: 'Owen Owner', ownerEmail: 'owen@example.com', floor: 8,
+  });
+  assert.equal(edit.status, 200);
+  list = await mgr('GET', '/api/admin/units');
+  u0805 = list.body.find((u) => u.unit_number === '0805');
+  assert.equal(u0805.owner_name, 'Owen Owner');
+  assert.equal(u0805.owner_email, 'owen@example.com');
+  assert.equal(u0805.floor, 8);
+
+  // Security cannot edit units.
+  const sec = makeClient();
+  await sec('POST', '/api/auth/login', { username: 'security1', password: 'changeme123' });
+  const denied = await sec('PATCH', '/api/admin/units/0805', { ownerName: 'Nope' });
+  assert.equal(denied.status, 403);
+});
+
 test('shutdown endpoint is management-only (and a no-op under test)', async () => {
   // Non-management is refused.
   const sec = makeClient();

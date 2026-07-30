@@ -377,3 +377,15 @@ COMMIT;
 BEGIN;
 UPDATE users SET role = 'security', updated_at = now() WHERE role = 'board';
 COMMIT;
+
+-- ============================================================================
+--  v13 migration — unit owner contact captured on the unit itself. Populated
+--  automatically when a resident submits a request or staff issue a pass (and
+--  editable from the "All units" table). Kept on units (not residents) so it is
+--  a single, directly-editable owner record per unit.
+-- ============================================================================
+BEGIN;
+ALTER TABLE units ADD COLUMN IF NOT EXISTS owner_name  TEXT;
+ALTER TABLE units ADD COLUMN IF NOT EXISTS owner_phone TEXT;
+ALTER TABLE units ADD COLUMN IF NOT EXISTS owner_email TEXT;
+COMMIT;
