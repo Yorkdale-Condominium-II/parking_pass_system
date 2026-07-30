@@ -44,6 +44,19 @@
   <!-- Account (all roles) -->
   <section id="view-account" class="view" hidden>
     <h1>My Account</h1>
+    <form class="card" id="accountForm">
+      <h2>My details</h2>
+      <label>Username <input name="username" autocomplete="username" required></label>
+      <label>First name <input name="firstName"></label>
+      <label>Last name <input name="lastName"></label>
+      <label>Email <input name="email" type="email"></label>
+      <label>Role
+        <select name="role" id="accountRole"></select>
+        <span class="hint" id="roleLockHint" hidden>Only a superuser can change roles.</span>
+      </label>
+      <button type="submit">Save changes</button>
+      <p class="msg" id="accountMsg"></p>
+    </form>
     <div class="card" id="accountBox">…</div>
     <div class="card">
       <h2>Change password</h2>

@@ -330,3 +330,19 @@ COMMIT;
 BEGIN;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS must_reset_password BOOLEAN NOT NULL DEFAULT FALSE;
 COMMIT;
+
+-- ============================================================================
+--  v10 migration — superuser flag. Superusers are the only accounts allowed to
+--  change a user's role (their own on the Account screen, or others' in the
+--  Manager console). Bootstrap: if no superuser exists yet, promote all current
+--  Management accounts. The NOT EXISTS guard makes this a one-time bootstrap so
+--  re-running migrations never fights a later manual grant/revoke — but it still
+--  self-heals (re-promotes Management) if every superuser is ever removed, so
+--  the building can't get permanently locked out of role management.
+-- ============================================================================
+BEGIN;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS is_superuser BOOLEAN NOT NULL DEFAULT FALSE;
+UPDATE users SET is_superuser = TRUE
+ WHERE role = 'management'
+   AND NOT EXISTS (SELECT 1 FROM users WHERE is_superuser = TRUE);
+COMMIT;

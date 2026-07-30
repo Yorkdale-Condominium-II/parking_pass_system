@@ -73,6 +73,8 @@ test.before(async () => {
       [u, n, r, pw]
     );
   }
+  // Mirror the v10 bootstrap: Management accounts start as superusers.
+  await db.query(`UPDATE users SET is_superuser = TRUE WHERE role = 'management'`);
   for (const un of ['1204', '0805']) {
     await db.query(`INSERT INTO units (unit_number) VALUES ($1)`, [un]);
   }
@@ -799,4 +801,82 @@ test('bulk unit import: JSON array, CSV, idempotent re-run, and per-row errors',
   await sec('POST', '/api/auth/login', { username: 'security1', password: 'changeme123' });
   const denied = await sec('POST', '/api/admin/units/import', { units: [{ unitNumber: 'Z-1' }] });
   assert.equal(denied.status, 403);
+});
+
+test('account self-edit: details editable by all; role only by a superuser', async () => {
+  // Management (a bootstrapped superuser) can edit details AND change role.
+  const mgr = makeClient();
+  await mgr('POST', '/api/auth/login', { username: 'manager1', password: 'changeme123' });
+  const acct = await mgr('GET', '/api/auth/account');
+  assert.equal(acct.status, 200);
+  assert.equal(acct.body.is_superuser, true);
+
+  const edit = await mgr('PATCH', '/api/auth/account', {
+    firstName: 'Morgan', lastName: 'Manager-Smith', email: 'morgan@example.com',
+  });
+  assert.equal(edit.status, 200);
+  assert.equal(edit.body.full_name, 'Morgan Manager-Smith');
+  assert.equal(edit.body.email, 'morgan@example.com');
+
+  // Security (not a superuser) may edit their own details...
+  const sec = makeClient();
+  await sec('POST', '/api/auth/login', { username: 'security1', password: 'changeme123' });
+  const secAcct = await sec('GET', '/api/auth/account');
+  assert.equal(secAcct.body.is_superuser, false);
+  const secEdit = await sec('PATCH', '/api/auth/account', { firstName: 'Samuel', email: 'sam@example.com' });
+  assert.equal(secEdit.status, 200);
+  assert.equal(secEdit.body.email, 'sam@example.com');
+
+  // ...but NOT change their own role.
+  const secRole = await sec('PATCH', '/api/auth/account', { role: 'management' });
+  assert.equal(secRole.status, 403);
+  assert.equal(secRole.body.error, 'role_change_forbidden');
+
+  // A superuser changing their own role succeeds and re-scopes their nav/views.
+  const mgrRole = await mgr('PATCH', '/api/auth/account', { role: 'board' });
+  assert.equal(mgrRole.status, 200);
+  assert.equal(mgrRole.body.role, 'board');
+  // Superuser status is independent of role — still a superuser after the change.
+  assert.equal(mgrRole.body.is_superuser, true);
+  // Restore manager1 to management so later tests (which share this DB) still
+  // have a management/superuser account to log in with.
+  const restore = await mgr('PATCH', '/api/auth/account', { role: 'management' });
+  assert.equal(restore.body.role, 'management');
+
+  // Duplicate username is rejected.
+  const dup = await sec('PATCH', '/api/auth/account', { username: 'board1' });
+  assert.equal(dup.status, 409);
+  assert.equal(dup.body.error, 'username_taken');
+});
+
+test('admin: only a superuser can change another user\'s role or superuser flag', async () => {
+  // Seed a second, non-superuser management account.
+  const pw = await password.hash('changeme123');
+  await db.query(
+    `INSERT INTO users (username, full_name, role, password_hash, is_superuser)
+     VALUES ('manager2','Max Manager','management',$1,FALSE)
+     ON CONFLICT (username) DO UPDATE SET is_superuser = FALSE, role = 'management'`,
+    [pw]
+  );
+
+  const sup = makeClient();
+  await sup('POST', '/api/auth/login', { username: 'manager1', password: 'changeme123' });
+  const target = await sup('GET', '/api/admin/users');
+  const secUser = target.body.find((u) => u.username === 'security1');
+
+  // Non-superuser manager: can edit names, but not role or the superuser flag.
+  const plain = makeClient();
+  await plain('POST', '/api/auth/login', { username: 'manager2', password: 'changeme123' });
+  const nameOnly = await plain('PATCH', `/api/admin/users/${secUser.id}`, { firstName: 'Renamed' });
+  assert.equal(nameOnly.status, 200);
+  const roleTry = await plain('PATCH', `/api/admin/users/${secUser.id}`, { role: 'board' });
+  assert.equal(roleTry.status, 403);
+  assert.equal(roleTry.body.error, 'superuser_required');
+  const supTry = await plain('PATCH', `/api/admin/users/${secUser.id}`, { isSuperuser: true });
+  assert.equal(supTry.status, 403);
+
+  // Superuser manager: can grant the superuser flag and change roles.
+  const grant = await sup('PATCH', `/api/admin/users/${secUser.id}`, { isSuperuser: true });
+  assert.equal(grant.status, 200);
+  assert.equal(grant.body.is_superuser, true);
 });

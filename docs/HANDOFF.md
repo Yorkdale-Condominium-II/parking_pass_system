@@ -15,7 +15,7 @@ A continuation guide for picking this project back up in a new session.
 it, `GET /api/settings` returns it (public), and the SPA shows it as a `vX.Y.Z`
 badge in the top-bar header and in the browser tab title. **Bump `package.json`
 with every committed change** so the running build is identifiable at a glance
-(semver: patch for fixes, minor for features). Current: **1.2.0**.
+(semver: patch for fixes, minor for features). Current: **1.3.0**.
 
 ---
 
@@ -55,6 +55,15 @@ Implemented and tested:
   residential cap against combined existing + new; reports per-row errors
   (missing number, duplicate-in-import, commercial-without-business-name,
   cap-reached) without aborting. UI on the Manager console ("Bulk import units").
+- **Superuser flag** (`users.is_superuser`, v10 migration): only superusers may
+  change a user's role — their own on the **Account** screen, or others' in the
+  Manager console (`is_superuser` toggle + role change gated to superusers).
+  Bootstrap promotes existing Management accounts when no superuser exists yet.
+- **Self-service Account edit**: users edit their own username / name / email
+  (and password); the role field is locked unless they're a superuser. The
+  session token is re-issued on save so changes apply without re-login.
+- **Nav grouping**: the top bar groups **Yorkdale Manager** + **Account** under
+  a "System Management" label.
 - **Yorkdale Manager** console: settings (company/condo name), manage users
   (create/activate/deactivate/reset pw/history), pass + sign-in audit logs,
   weekly override code, data export (CSV/XLSX/PDF), year-end archive & clear,

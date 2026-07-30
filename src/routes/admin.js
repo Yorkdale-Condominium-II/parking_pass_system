@@ -54,17 +54,22 @@ router.post('/users', async (req, res) => {
 
 router.get('/users', async (req, res) => {
   const r = await db.query(
-    `SELECT id, username, first_name, last_name, full_name, role, email, is_active, created_at
+    `SELECT id, username, first_name, last_name, full_name, role, email, is_active, is_superuser, created_at
        FROM users ORDER BY role, full_name`
   );
   res.json(r.rows);
 });
 
-// Update a user: names, role, or active state.
+// Update a user: names, role, active state, or superuser flag.
 router.patch('/users/:id', async (req, res) => {
-  const { firstName, lastName, role, email, isActive } = req.body || {};
+  const { firstName, lastName, role, email, isActive, isSuperuser } = req.body || {};
   if (role && !['security', 'management', 'board'].includes(role)) {
     return res.status(400).json({ error: 'invalid_role' });
+  }
+  // Changing a role or the superuser flag is reserved for superusers.
+  if (role !== undefined || typeof isSuperuser === 'boolean') {
+    const me = await db.query(`SELECT is_superuser FROM users WHERE id = $1`, [req.user.id]);
+    if (!me.rows[0]?.is_superuser) return res.status(403).json({ error: 'superuser_required' });
   }
   const sets = [];
   const params = [];
@@ -74,6 +79,7 @@ router.patch('/users/:id', async (req, res) => {
   if (role !== undefined) add('role', role);
   if (email !== undefined) add('email', (email || '').trim() || null);
   if (typeof isActive === 'boolean') add('is_active', isActive);
+  if (typeof isSuperuser === 'boolean') add('is_superuser', isSuperuser);
   if (!sets.length) return res.status(400).json({ error: 'nothing_to_update' });
   params.push(req.params.id);
   let r;
@@ -90,7 +96,7 @@ router.patch('/users/:id', async (req, res) => {
   // Keep full_name derived from first/last.
   const out = await db.query(
     `UPDATE users SET full_name = trim(concat_ws(' ', first_name, last_name)) WHERE id = $1
-      RETURNING id, username, first_name, last_name, full_name, role, is_active`,
+      RETURNING id, username, first_name, last_name, full_name, role, is_active, is_superuser`,
     [req.params.id]
   );
   res.json(out.rows[0]);

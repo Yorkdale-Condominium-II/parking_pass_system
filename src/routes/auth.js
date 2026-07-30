@@ -104,12 +104,74 @@ router.get('/providers', (req, res) => {
 // The signed-in user's own account details (for the Account screen).
 router.get('/account', requireAuth, async (req, res) => {
   const r = await db.query(
-    `SELECT username, first_name, last_name, full_name, role, email, sso_provider
+    `SELECT username, first_name, last_name, full_name, role, email, sso_provider, is_superuser
        FROM users WHERE id = $1`,
     [req.user.id]
   );
   if (r.rowCount === 0) return res.status(404).json({ error: 'user_not_found' });
   res.json(r.rows[0]);
+});
+
+// Self-service edit of the signed-in user's own account. Username, name, and
+// email are always editable; role can only be changed by a superuser. Because
+// username/name/role are embedded in the session token, we re-issue it so the
+// change takes effect immediately without a re-login.
+router.patch('/account', requireAuth, async (req, res) => {
+  const { username, firstName, lastName, email, role } = req.body || {};
+  const cur = await db.query(`SELECT * FROM users WHERE id = $1`, [req.user.id]);
+  if (cur.rowCount === 0) return res.status(404).json({ error: 'user_not_found' });
+
+  const sets = [];
+  const params = [];
+  const add = (col, val) => { params.push(val); sets.push(`${col} = $${params.length}`); };
+
+  if (username !== undefined) {
+    if (!String(username).trim()) return res.status(400).json({ error: 'username_required' });
+    add('username', String(username).trim());
+  }
+  if (firstName !== undefined) add('first_name', String(firstName).trim());
+  if (lastName !== undefined) add('last_name', String(lastName).trim());
+  if (email !== undefined) add('email', (String(email).trim() || null));
+  if (role !== undefined && role !== cur.rows[0].role) {
+    // Only superusers may change a role — including their own.
+    if (!cur.rows[0].is_superuser) return res.status(403).json({ error: 'role_change_forbidden' });
+    if (!['security', 'management', 'board'].includes(role)) {
+      return res.status(400).json({ error: 'invalid_role' });
+    }
+    add('role', role);
+  }
+  if (!sets.length) return res.status(400).json({ error: 'nothing_to_update' });
+
+  params.push(req.user.id);
+  try {
+    await db.query(
+      `UPDATE users SET ${sets.join(', ')}, updated_at = now() WHERE id = $${params.length}`,
+      params
+    );
+  } catch (err) {
+    if (err.code === '23505') {
+      const which = /email/i.test(err.constraint || '') ? 'email_taken' : 'username_taken';
+      return res.status(409).json({ error: which });
+    }
+    throw err;
+  }
+  // Keep full_name derived from the (now-updated) first/last name columns.
+  const updated = await db.query(
+    `UPDATE users SET full_name = trim(concat_ws(' ', first_name, last_name))
+      WHERE id = $1 RETURNING *`,
+    [req.user.id]
+  );
+
+  const u = updated.rows[0];
+  const token = issueSession(u);
+  res.cookie('session', token, {
+    httpOnly: true, sameSite: 'strict', secure: process.env.NODE_ENV === 'production', maxAge: 8 * 3600 * 1000,
+  });
+  res.json({
+    username: u.username, first_name: u.first_name, last_name: u.last_name,
+    full_name: u.full_name, role: u.role, email: u.email,
+    sso_provider: u.sso_provider, is_superuser: u.is_superuser,
+  });
 });
 
 module.exports = router;

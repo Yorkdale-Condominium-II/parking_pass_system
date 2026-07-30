@@ -21,9 +21,11 @@ const api = async (path, opts = {}) => {
 
 const ROLE_VIEWS = {
   security:   ['lookup', 'issue', 'verify', 'spots', 'requests', 'account'],
-  management: ['lookup', 'issue', 'verify', 'spots', 'requests', 'admin', 'board', 'account'],
+  management: ['lookup', 'issue', 'verify', 'spots', 'requests', 'board', 'admin', 'account'],
   board:      ['board', 'account'],
 };
+// Views grouped under a "System Management" label in the nav.
+const SYS_GROUP = ['admin', 'account'];
 const VIEW_LABELS = { lookup: 'Lookup', issue: 'Issue Pass', verify: 'Verify', spots: 'Spots', requests: 'Requests', admin: 'Yorkdale Manager', board: 'Dashboard', account: 'Account' };
 let currentUser = null;
 let unitIndex = {};   // unit_number -> {kind, business_name}
@@ -80,7 +82,14 @@ async function refreshPendingBadge() {
 
 function renderNav() {
   const views = ROLE_VIEWS[currentUser.role] || [];
-  $('#nav').innerHTML = views.map((v) => `<button data-view="${v}">${VIEW_LABELS[v]}</button>`).join('');
+  const btn = (v) => `<button data-view="${v}">${VIEW_LABELS[v]}</button>`;
+  const main = views.filter((v) => !SYS_GROUP.includes(v));
+  const group = views.filter((v) => SYS_GROUP.includes(v));
+  let html = main.map(btn).join('');
+  if (group.length) {
+    html += `<span class="nav-group"><span class="nav-group-label">System Management</span>${group.map(btn).join('')}</span>`;
+  }
+  $('#nav').innerHTML = html;
   document.querySelectorAll('#nav button').forEach((b) => (b.onclick = () => showView(b.dataset.view)));
   if (views.includes('requests')) refreshPendingBadge();
   showView(views[0]);
@@ -626,11 +635,25 @@ $('#yearEndBox').addEventListener('click', async (e) => {
 });
 
 // --- Account (all roles) ---
+const ROLE_LABELS = { security: 'Security', management: 'Management', board: 'Board' };
 async function loadAccount() {
   const a = await api('/auth/account');
+  // Populate the editable details form.
+  const f = $('#accountForm');
+  f.username.value = a.username || '';
+  f.firstName.value = a.first_name || '';
+  f.lastName.value = a.last_name || '';
+  f.email.value = a.email || '';
+  // Role select: superusers can change it; everyone else sees it locked.
+  const roleSel = $('#accountRole');
+  roleSel.innerHTML = Object.entries(ROLE_LABELS)
+    .map(([v, l]) => `<option value="${v}"${v === a.role ? ' selected' : ''}>${l}</option>`).join('');
+  roleSel.disabled = !a.is_superuser;
+  $('#roleLockHint').hidden = Boolean(a.is_superuser);
+  $('#accountMsg').textContent = '';
+
   $('#accountBox').innerHTML = `
-    <p><b>${a.full_name}</b> · ${a.role}</p>
-    <p>Username: ${a.username}</p>
+    <p><b>${a.full_name}</b> · ${ROLE_LABELS[a.role] || a.role}${a.is_superuser ? ' · <span class="badge VALID">Superuser</span>' : ''}</p>
     <p>Email: ${a.email || '<i>not linked</i>'} ${a.sso_provider ? `· linked to ${a.sso_provider}` : ''}</p>`;
   try {
     const { sso } = await api('/auth/providers');
@@ -640,6 +663,35 @@ async function loadAccount() {
       : '<span class="hint">Google/Microsoft sign-in isn’t configured on this server yet.</span>';
   } catch {}
 }
+$('#accountForm').onsubmit = async (e) => {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  const body = {
+    username: f.get('username'), firstName: f.get('firstName'),
+    lastName: f.get('lastName'), email: f.get('email'),
+  };
+  // Only send role when the field is editable (superuser), so others never trip the guard.
+  if (!$('#accountRole').disabled) body.role = f.get('role');
+  try {
+    const roleBefore = currentUser.role;
+    const updated = await api('/auth/account', { method: 'PATCH', body });
+    currentUser.name = updated.full_name;
+    currentUser.role = updated.role;
+    applyOrgName();
+    $('#accountMsg').textContent = 'Saved.';
+    if (updated.role !== roleBefore) {
+      // Role changed which tabs are available — rebuild nav, then return to Account.
+      renderNav();
+      showView('account');
+    } else {
+      loadAccount();
+    }
+  } catch (err) {
+    const map = { username_taken: 'That username is already taken.', email_taken: 'That email is already in use.',
+      role_change_forbidden: 'Only a superuser can change roles.' };
+    $('#accountMsg').textContent = map[err.data?.error] || err.message;
+  }
+};
 $('#pwForm').onsubmit = async (e) => {
   e.preventDefault();
   const f = new FormData(e.target);
