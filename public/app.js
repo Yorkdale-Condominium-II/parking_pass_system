@@ -47,8 +47,11 @@ function applyOrgName() {
 }
 function applyVersion() {
   if (!appVersion) return;
-  const badge = $('#appVersion');
-  if (badge) badge.textContent = `v${appVersion}`;
+  // Header badge (shown once logged in) and login-screen badge (shown before).
+  for (const id of ['#appVersion', '#appVersionLogin']) {
+    const badge = $(id);
+    if (badge) badge.textContent = `v${appVersion}`;
+  }
   // Surface the version in the browser tab too.
   document.title = `${orgName} — Parking Management (v${appVersion})`;
 }
@@ -557,8 +560,8 @@ async function loadSpots() {
         <button type="button" class="danger" data-action="cancel" data-id="${p.id}">Cancel pass</button>
       </div>
     </div>`).join('') : '<p>No spaces occupied right now.</p>';
-  $('#spotsUpcoming').innerHTML = s.upcoming.length ? `<table><tr><th>Starts</th><th>Unit</th><th>Plate</th><th>Until</th></tr>` +
-    s.upcoming.map((p) => `<tr><td>${new Date(p.starts_at).toLocaleString()}</td><td>${p.unit_number}</td><td>${p.visitor_plate}</td><td>${new Date(p.expires_at).toLocaleString()}</td></tr>`).join('') + `</table>` : '<p>Nothing scheduled.</p>';
+  $('#spotsUpcoming').innerHTML = s.upcoming.length ? `<table><tr><th>Starts</th><th>Unit</th><th>Plate</th><th>Until</th><th>Authorized by</th></tr>` +
+    s.upcoming.map((p) => `<tr><td>${new Date(p.starts_at).toLocaleString()}</td><td>${p.unit_number}</td><td>${p.visitor_plate}</td><td>${new Date(p.expires_at).toLocaleString()}</td><td>${p.authorized_by || '—'}</td></tr>`).join('') + `</table>` : '<p>Nothing scheduled.</p>';
 }
 $('#spotsLive').addEventListener('click', async (e) => {
   const btn = e.target.closest('button[data-action]');
@@ -670,6 +673,8 @@ async function loadBoard() {
 
 // --- Boot ---
 (async () => {
+  // Load public settings first so the version/org show even before login.
+  await loadSettings();
   try {
     const { user } = await api('/auth/me');
     await enterApp(user);

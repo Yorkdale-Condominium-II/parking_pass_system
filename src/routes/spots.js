@@ -20,8 +20,10 @@ router.get('/', async (req, res) => {
   );
   const upcoming = await db.query(
     `SELECT vp.id, vp.visitor_plate, vp.visitor_name, vp.starts_at, vp.expires_at,
-            u.unit_number
-       FROM visitor_passes vp JOIN units u ON u.id = vp.unit_id
+            u.unit_number, iss.full_name AS authorized_by
+       FROM visitor_passes vp
+       JOIN units u ON u.id = vp.unit_id
+       LEFT JOIN users iss ON iss.id = vp.issued_by
       WHERE vp.status = 'active' AND vp.vacated_at IS NULL
         AND vp.starts_at > now() AND vp.starts_at < now() + interval '48 hours'
       ORDER BY vp.starts_at

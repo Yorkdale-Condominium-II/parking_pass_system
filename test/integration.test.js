@@ -347,10 +347,17 @@ test('scheduling a non-overlapping window avoids the live cap', async () => {
   for (let i = 0; i < 5; i++) {
     await c('POST', '/api/passes', { unitNumber: 'C-101', visitorPlate: 'N' + i });
   }
-  // A pass scheduled well into the future doesn't overlap the 5 live ones.
-  const future = new Date(Date.now() + 10 * 24 * 3600 * 1000).toISOString();
+  // A pass scheduled after the live ones expire doesn't overlap them (and stays
+  // inside the 48h upcoming window so the scheduled list can be asserted below).
+  const future = new Date(Date.now() + 30 * 3600 * 1000).toISOString();
   const sched = await c('POST', '/api/passes', { unitNumber: 'C-101', visitorPlate: 'SCHED1', startsAt: future });
   assert.equal(sched.status, 201, JSON.stringify(sched.body));
+
+  // The scheduled list names who authorized (issued) each upcoming pass.
+  const spots = await c('GET', '/api/spots');
+  const row = spots.body.upcoming.find((p) => p.visitor_plate === 'SCHED1');
+  assert.ok(row, 'scheduled pass should appear in the upcoming list');
+  assert.equal(row.authorized_by, 'Sam Security');
 });
 
 test('vacating a spot frees capacity for the next guest', async () => {
