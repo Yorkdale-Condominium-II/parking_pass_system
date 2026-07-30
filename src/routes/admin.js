@@ -284,17 +284,19 @@ router.post('/units/import', async (req, res) => {
       const notes = (row.notes ?? '').trim() || null;
       const bContact = kind === 'commercial' ? ((row.businessContact ?? '').trim() || null) : null;
       const bName = kind === 'commercial' ? businessName : null;
-      // Upsert keeps the import idempotent: a re-run updates in place.
-      const r = await client.query(
+      // Upsert keeps the import idempotent: a re-run updates in place. We can't
+      // rely on the RETURNING xmax trick to tell insert from update because
+      // ON CONFLICT uses speculative insertion (xmax is non-zero even on a
+      // successful insert), so classify from the pre-fetched `known` set.
+      await client.query(
         `INSERT INTO units (unit_number, floor, notes, kind, business_name, business_contact)
          VALUES ($1,$2,$3,$4,$5,$6)
          ON CONFLICT (unit_number) DO UPDATE SET
            floor = EXCLUDED.floor, notes = EXCLUDED.notes, kind = EXCLUDED.kind,
-           business_name = EXCLUDED.business_name, business_contact = EXCLUDED.business_contact
-         RETURNING (xmax = 0) AS inserted`,
+           business_name = EXCLUDED.business_name, business_contact = EXCLUDED.business_contact`,
         [unitNumber, floor, notes, kind, bName, bContact]
       );
-      if (r.rows[0].inserted) result.inserted++; else result.updated++;
+      if (isNew) result.inserted++; else result.updated++;
       known.add(unitNumber);
     }
   });
