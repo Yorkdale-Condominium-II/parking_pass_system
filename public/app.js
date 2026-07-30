@@ -20,11 +20,11 @@ const api = async (path, opts = {}) => {
 };
 
 const ROLE_VIEWS = {
-  security:   ['lookup', 'issue', 'verify', 'spots', 'requests'],
-  management: ['lookup', 'issue', 'verify', 'spots', 'requests', 'admin', 'board'],
-  board:      ['board'],
+  security:   ['lookup', 'issue', 'verify', 'spots', 'requests', 'account'],
+  management: ['lookup', 'issue', 'verify', 'spots', 'requests', 'admin', 'board', 'account'],
+  board:      ['board', 'account'],
 };
-const VIEW_LABELS = { lookup: 'Lookup', issue: 'Issue Pass', verify: 'Verify', spots: 'Spots', requests: 'Requests', admin: 'Yorkdale Manager', board: 'Dashboard' };
+const VIEW_LABELS = { lookup: 'Lookup', issue: 'Issue Pass', verify: 'Verify', spots: 'Spots', requests: 'Requests', admin: 'Yorkdale Manager', board: 'Dashboard', account: 'Account' };
 let currentUser = null;
 let unitIndex = {};   // unit_number -> {kind, business_name}
 let regionData = null;
@@ -50,6 +50,7 @@ function showView(name) {
   if (name === 'issue') { loadUnits(); loadSpotsBadge(); }
   if (name === 'requests') loadRequests();
   if (name === 'spots') loadSpots();
+  if (name === 'account') loadAccount();
   if (name !== 'verify') stopCamera();
 }
 
@@ -73,11 +74,30 @@ async function enterApp(user) {
   currentUser = user;
   $('#topbar').hidden = false;
   $('#view-login').hidden = true;
-  await loadRegions();
   await loadSettings();
   applyOrgName();
+  // Force a password change before anything else if this is a temporary password.
+  if (user.mustReset) {
+    document.querySelectorAll('.view').forEach((v) => (v.hidden = true));
+    $('#nav').innerHTML = '';
+    $('#view-reset').hidden = false;
+    return;
+  }
+  await loadRegions();
   renderNav();
 }
+
+$('#resetForm').onsubmit = async (e) => {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  try {
+    await api('/auth/change-password', { method: 'POST', body: { currentPassword: f.get('currentPassword'), newPassword: f.get('newPassword') } });
+    const { user } = await api('/auth/me');
+    await enterApp(user);
+  } catch (err) {
+    $('#resetError').textContent = err.data?.error === 'wrong_current_password' ? 'Current password is incorrect.' : err.message;
+  }
+};
 
 // --- Auth ---
 $('#loginForm').onsubmit = async (e) => {
@@ -562,6 +582,30 @@ $('#yearEndBox').addEventListener('click', async (e) => {
   } catch (err) { $('#yearEndMsg').textContent = err.message; }
 });
 
+// --- Account (all roles) ---
+async function loadAccount() {
+  const a = await api('/auth/account');
+  $('#accountBox').innerHTML = `
+    <p><b>${a.full_name}</b> · ${a.role}</p>
+    <p>Username: ${a.username}</p>
+    <p>Email: ${a.email || '<i>not linked</i>'} ${a.sso_provider ? `· linked to ${a.sso_provider}` : ''}</p>`;
+  try {
+    const { sso } = await api('/auth/providers');
+    const labels = { google: 'Link Google', microsoft: 'Link Microsoft' };
+    $('#linkButtons').innerHTML = (sso || []).length
+      ? sso.map((p) => `<a href="/api/auth/sso/${p}/link"><button type="button">${labels[p] || p}</button></a>`).join('')
+      : '<span class="hint">Google/Microsoft sign-in isn’t configured on this server yet.</span>';
+  } catch {}
+}
+$('#pwForm').onsubmit = async (e) => {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  try {
+    await api('/auth/change-password', { method: 'POST', body: { currentPassword: f.get('currentPassword'), newPassword: f.get('newPassword') } });
+    $('#pwMsg').textContent = 'Password changed.'; e.target.reset();
+  } catch (err) { $('#pwMsg').textContent = err.data?.error === 'wrong_current_password' ? 'Current password is incorrect.' : err.message; }
+};
+
 // --- Board ---
 async function loadBoard() {
   const s = await api('/board/summary');
@@ -589,5 +633,9 @@ async function loadBoard() {
   try {
     const { user } = await api('/auth/me');
     await enterApp(user);
+    if (new URLSearchParams(location.search).get('linked') && !user.mustReset) {
+      history.replaceState({}, '', location.pathname);
+      showView('account');
+    }
   } catch { $('#view-login').hidden = false; initSso(); }
 })();

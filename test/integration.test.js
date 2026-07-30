@@ -653,6 +653,47 @@ test('org/condo name is readable and management can change it', async () => {
   assert.equal(denied.status, 403);
 });
 
+test('temporary password forces a reset, then self-service change clears it', async () => {
+  const mgr = makeClient();
+  await mgr('POST', '/api/auth/login', { username: 'manager1', password: 'changeme123' });
+  await mgr('POST', '/api/admin/users', {
+    username: 'tmpuser', firstName: 'Tem', lastName: 'Porary', role: 'security', password: 'temppass1',
+  });
+
+  const u = makeClient();
+  const login = await u('POST', '/api/auth/login', { username: 'tmpuser', password: 'temppass1' });
+  assert.equal(login.status, 200);
+  assert.equal(login.body.user.mustReset, true);
+
+  // Account has no linked email yet.
+  const acct = await u('GET', '/api/auth/account');
+  assert.equal(acct.body.email, null);
+
+  // Wrong current password is rejected.
+  const wrong = await u('POST', '/api/auth/change-password', { currentPassword: 'nope', newPassword: 'brandnew1' });
+  assert.equal(wrong.status, 401);
+
+  const changed = await u('POST', '/api/auth/change-password', { currentPassword: 'temppass1', newPassword: 'brandnew1' });
+  assert.equal(changed.status, 200);
+
+  // The flag is cleared now.
+  const me = await u('GET', '/api/auth/me');
+  assert.equal(me.body.user.mustReset, false);
+
+  // Old password no longer works; the new one does (and no longer forces reset).
+  const old = makeClient();
+  assert.equal((await old('POST', '/api/auth/login', { username: 'tmpuser', password: 'temppass1' })).status, 401);
+  const fresh = makeClient();
+  const relog = await fresh('POST', '/api/auth/login', { username: 'tmpuser', password: 'brandnew1' });
+  assert.equal(relog.body.user.mustReset, false);
+});
+
+test('the desk reports no active SSO session by default', async () => {
+  const anon = makeClient();
+  const s = await anon('GET', '/api/desk/session');
+  assert.equal(s.body.active, false);
+});
+
 test('SSO: providers list reflects config; email maps to a provisioned user', async () => {
   const anon = makeClient();
   const prov = await anon('GET', '/api/auth/providers');

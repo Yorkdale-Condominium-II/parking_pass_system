@@ -38,8 +38,8 @@ router.post('/users', async (req, res) => {
   const hash = await password.hash(pw);
   try {
     const r = await db.query(
-      `INSERT INTO users (username, first_name, last_name, full_name, role, email, password_hash)
-       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id, username, first_name, last_name, full_name, role, email`,
+      `INSERT INTO users (username, first_name, last_name, full_name, role, email, password_hash, must_reset_password)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,TRUE) RETURNING id, username, first_name, last_name, full_name, role, email`,
       [username, firstName.trim(), lastName.trim(), fullName, role, (email || '').trim() || null, hash]
     );
     res.status(201).json(r.rows[0]);
@@ -101,8 +101,9 @@ router.post('/users/:id/reset-password', async (req, res) => {
   const { password: pw } = req.body || {};
   if (!pw || pw.length < 8) return res.status(400).json({ error: 'password_too_short' });
   const hash = await password.hash(pw);
+  // A manager-set password is temporary — force the user to change it at next login.
   const r = await db.query(
-    `UPDATE users SET password_hash = $1, updated_at = now() WHERE id = $2 RETURNING id`,
+    `UPDATE users SET password_hash = $1, must_reset_password = TRUE, updated_at = now() WHERE id = $2 RETURNING id`,
     [hash, req.params.id]
   );
   if (r.rowCount === 0) return res.status(404).json({ error: 'user_not_found' });

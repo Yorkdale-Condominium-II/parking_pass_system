@@ -29,6 +29,38 @@
     <p class="hint">At the desk? <a href="/desk.html">Open the visitor pass desk →</a></p>
   </section>
 
+  <!-- Forced password reset (temporary password) -->
+  <section id="view-reset" class="view card" hidden style="max-width:420px;margin:40px auto">
+    <h1>Set a new password</h1>
+    <p class="hint">Your account was created with a temporary password. Please choose your own to continue.</p>
+    <form id="resetForm">
+      <label>Current (temporary) password <input name="currentPassword" type="password" required></label>
+      <label>New password (min 8 chars) <input name="newPassword" type="password" required minlength="8"></label>
+      <button type="submit">Save and continue</button>
+      <p class="error" id="resetError"></p>
+    </form>
+  </section>
+
+  <!-- Account (all roles) -->
+  <section id="view-account" class="view" hidden>
+    <h1>My Account</h1>
+    <div class="card" id="accountBox">…</div>
+    <div class="card">
+      <h2>Change password</h2>
+      <form id="pwForm">
+        <label>Current password <input name="currentPassword" type="password" required></label>
+        <label>New password (min 8 chars) <input name="newPassword" type="password" required minlength="8"></label>
+        <button type="submit">Change password</button>
+        <p class="msg" id="pwMsg"></p>
+      </form>
+    </div>
+    <div class="card">
+      <h2>Quick sign-in</h2>
+      <p class="hint">Link your Google or Microsoft account so you can sign in with one click next time — no password to remember.</p>
+      <div class="btn-row" id="linkButtons"></div>
+    </div>
+  </section>
+
   <!-- Security / Management: Lookup -->
   <section id="view-lookup" class="view" hidden>
     <h1>Lookup</h1>

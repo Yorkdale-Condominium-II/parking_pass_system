@@ -68,6 +68,19 @@ async function findUserByEmail(email) {
   return r.rows[0] || null;
 }
 
+// Prefer an exact provider-subject match (survives an email change), then email.
+async function findUserForLogin(provider, sub, email) {
+  if (sub) {
+    const r = await db.query(
+      `SELECT * FROM users WHERE sso_provider = $1 AND sso_subject = $2 AND is_active = TRUE`,
+      [provider, sub]
+    );
+    if (r.rows[0]) return r.rows[0];
+  }
+  return findUserByEmail(email);
+}
+
 module.exports = {
-  isEnabled, enabledProviders, redirectUri, getClient, makeAuthRequest, findUserByEmail,
+  isEnabled, enabledProviders, redirectUri, getClient, makeAuthRequest,
+  findUserByEmail, findUserForLogin,
 };

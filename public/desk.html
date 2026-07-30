@@ -48,11 +48,15 @@
 
       <hr>
       <h2>Authorize</h2>
-      <div class="cols">
-        <label>Issuing officer
-          <select name="officerUsername" id="officerSelect" required></select>
-        </label>
-        <label>Officer password <input name="officerPassword" type="password" required autocomplete="off"></label>
+      <div id="deskSessionBox" class="banner" hidden></div>
+      <div class="btn-row" id="deskSsoButtons"></div>
+      <div id="officerAuth">
+        <div class="cols">
+          <label>Issuing officer
+            <select name="officerUsername" id="officerSelect"></select>
+          </label>
+          <label>Officer password <input name="officerPassword" type="password" autocomplete="off"></label>
+        </div>
       </div>
 
       <button type="submit">Issue pass</button>

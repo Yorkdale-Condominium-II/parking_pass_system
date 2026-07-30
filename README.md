@@ -158,13 +158,26 @@ see `.env.example`; without it, approval still works and the email is skipped).
 
 Optional. When `GOOGLE_CLIENT_*` and/or `MICROSOFT_CLIENT_*` are configured (see
 `.env.example`), the login page shows "Sign in with Google/Microsoft" buttons
-(OpenID Connect, Authorization Code + PKCE). SSO only **authenticates** — it
-proves the person's verified email; **authorization** still comes from the
-users table. The email must match an **active** user (set the email under
-Yorkdale Manager → Manage users), and that row's role is granted. Unprovisioned
-emails are refused (`?sso_error=not_provisioned`). Register the OAuth apps with
-redirect URI `<OAUTH_BASE_URL>/api/auth/sso/<google|microsoft>/callback`.
-Password login keeps working alongside SSO.
+(OpenID Connect, Authorization Code + PKCE). SSO only **authenticates**;
+**authorization** always comes from the users table.
+
+Account lifecycle (no manager email-typing required):
+1. A manager creates the account with **username + role + a temporary password**
+   (email optional).
+2. The user logs in once and is **forced to set a new password**.
+3. On the **Account** screen the user clicks **Link Google/Microsoft** — this
+   captures their verified email + provider subject onto their own record.
+4. Afterwards they just click **Sign in with Google/Microsoft** (matched by
+   provider subject, then email). Unprovisioned/disabled accounts are refused.
+
+Register the OAuth apps with redirect URI
+`<OAUTH_BASE_URL>/api/auth/sso/<google|microsoft>/callback`. Password login keeps
+working alongside SSO.
+
+**Desk sessions:** at the open Desk page, an officer can **Sign in with
+Google/Microsoft to start a short desk session** (`DESK_SESSION_MINUTES`, default
+30) and then issue several passes without re-authenticating; when no desk
+session is active, the per-pass officer + password flow still works.
 
 ### Open Desk kiosk (no login)
 

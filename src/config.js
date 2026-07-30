@@ -31,6 +31,8 @@ module.exports = {
   defaultPassDurationHours: parseInt(process.env.DEFAULT_PASS_DURATION_HOURS || '24', 10),
   // Base URL the app is reached at, used to build OAuth redirect URIs.
   oauthBaseUrl: (process.env.OAUTH_BASE_URL || `http://localhost:${process.env.PORT || '3000'}`).replace(/\/$/, ''),
+  // How long a Google/Microsoft-started desk session lasts (minutes).
+  deskSessionMinutes: parseInt(process.env.DESK_SESSION_MINUTES || '30', 10),
   sso: {
     google: {
       clientId: process.env.GOOGLE_CLIENT_ID || null,

@@ -11,10 +11,26 @@ const config = require('./../config');
  */
 function issueSession(user) {
   return jwt.sign(
-    { sub: user.id, role: user.role, name: user.full_name, username: user.username },
+    { sub: user.id, role: user.role, name: user.full_name, username: user.username,
+      mr: Boolean(user.must_reset_password) },
     config.jwtSecret,
     { issuer: config.jwtIssuer, expiresIn: '8h' }
   );
+}
+
+// A short-lived desk session (started via Google/Microsoft at the kiosk).
+function issueDeskSession(user) {
+  return jwt.sign(
+    { sub: user.id, role: user.role, name: user.full_name, username: user.username, desk: true },
+    config.jwtSecret,
+    { issuer: config.jwtIssuer, expiresIn: `${config.deskSessionMinutes}m` }
+  );
+}
+function verifyDeskSession(token) {
+  try {
+    const c = jwt.verify(token, config.jwtSecret, { issuer: config.jwtIssuer });
+    return c.desk ? c : null;
+  } catch { return null; }
 }
 
 /**
@@ -30,7 +46,7 @@ function requireAuth(req, res, next) {
 
   try {
     const claims = jwt.verify(token, config.jwtSecret, { issuer: config.jwtIssuer });
-    req.user = { id: claims.sub, role: claims.role, name: claims.name, username: claims.username };
+    req.user = { id: claims.sub, role: claims.role, name: claims.name, username: claims.username, mustReset: Boolean(claims.mr) };
     return next();
   } catch {
     return res.status(401).json({ error: 'invalid_or_expired_session' });
@@ -51,4 +67,4 @@ function requireRole(...roles) {
   };
 }
 
-module.exports = { issueSession, requireAuth, requireRole };
+module.exports = { issueSession, issueDeskSession, verifyDeskSession, requireAuth, requireRole };

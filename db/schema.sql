@@ -323,3 +323,10 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS sso_subject  TEXT;  -- provider 'sub'
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_lower
   ON users (lower(email)) WHERE email IS NOT NULL;
 COMMIT;
+
+-- ============================================================================
+--  v9 migration — force a password change after a manager-set temporary one.
+-- ============================================================================
+BEGIN;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS must_reset_password BOOLEAN NOT NULL DEFAULT FALSE;
+COMMIT;

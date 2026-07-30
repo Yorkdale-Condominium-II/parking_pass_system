@@ -91,4 +91,40 @@ fetch('/api/settings').then((r) => r.json()).then((s) => {
   if (s.orgName) document.title = s.orgName + ' — Visitor Pass Desk';
 }).catch(() => {});
 
+// Desk session (Google/Microsoft) — when active, no per-pass password is needed.
+let deskSession = null;
+async function loadDeskSession() {
+  deskSession = await (await fetch('/api/desk/session')).json();
+  const providers = await (await fetch('/api/auth/providers')).json();
+  const box = document.getElementById('deskSessionBox');
+  const officerAuth = document.getElementById('officerAuth');
+  const ssoBtns = document.getElementById('deskSsoButtons');
+  if (deskSession.active) {
+    const mins = Math.max(0, Math.round((deskSession.expiresAt - Date.now()) / 60000));
+    box.hidden = false;
+    box.innerHTML = `Signed in for the desk as <b>${deskSession.name}</b> (${deskSession.role}) · about ${mins} min left · <a href="#" id="deskLogout">sign out</a>`;
+    officerAuth.hidden = true;
+    ssoBtns.innerHTML = '';
+    document.getElementById('deskLogout').onclick = async (e) => {
+      e.preventDefault(); await fetch('/api/desk/logout', { method: 'POST' }); loadDeskSession();
+    };
+  } else {
+    box.hidden = true;
+    officerAuth.hidden = false;
+    const labels = { google: 'Sign in with Google', microsoft: 'Sign in with Microsoft' };
+    ssoBtns.innerHTML = (providers.sso || []).map((p) =>
+      `<a href="/api/auth/sso/${p}/desk"><button type="button">${labels[p] || p} (start desk session)</button></a>`).join('');
+  }
+}
+
+const params = new URLSearchParams(location.search);
+if (params.get('sso_error')) {
+  document.getElementById('deskError').textContent =
+    params.get('sso_error') === 'not_provisioned' ? 'That account isn’t set up here. Ask a manager.'
+    : params.get('sso_error') === 'not_desk_role' ? 'That account isn’t a security/management officer.'
+    : 'Desk sign-in was not completed.';
+  history.replaceState({}, '', location.pathname);
+}
+
 loadRefData();
+loadDeskSession();

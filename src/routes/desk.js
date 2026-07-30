@@ -8,8 +8,16 @@ const password = require('./../auth/password');
 const passService = require('./../services/passService');
 const barcode = require('./../crypto/barcode');
 const { renderPassSheet } = require('./../services/printTemplate');
+const { verifyDeskSession } = require('./../auth/middleware');
 
 const router = express.Router();
+
+// Current Google/Microsoft-started desk session, if any.
+router.get('/session', (req, res) => {
+  const s = verifyDeskSession(req.cookies?.desk_session || '');
+  res.json(s ? { active: true, name: s.name, role: s.role, expiresAt: s.exp * 1000 } : { active: false });
+});
+router.post('/logout', (req, res) => { res.clearCookie('desk_session'); res.json({ ok: true }); });
 
 // Public desk kiosk: no session. The operator picks an officer and enters that
 // officer's password on each submission, which authenticates the issuance.
@@ -43,29 +51,41 @@ router.get('/units', async (req, res) => {
 
 // Issue a pass after verifying the selected officer's password.
 router.post('/issue', deskLimiter, async (req, res) => {
-  const { officerUsername, officerPassword } = req.body || {};
-  if (!officerUsername || !officerPassword) {
-    return res.status(400).json({ error: 'officer_and_password_required' });
-  }
-  const u = await db.query(
-    `SELECT * FROM users WHERE username = $1 AND is_active = TRUE AND role IN ('security','management')`,
-    [officerUsername]
-  );
-  const user = u.rows[0];
-  const ok = user
-    ? await password.verify(officerPassword, user.password_hash)
-    : await password.verify(officerPassword, '$2a$12$0000000000000000000000000000000000000000000000000000');
-  if (!user || !ok) {
-    // Record the failed desk auth attempt.
-    await db.query(
-      `INSERT INTO auth_audit_log (username, event, success, ip, user_agent)
-       VALUES ($1,'desk_issue_failed',FALSE,$2,$3)`,
-      [officerUsername, req.ip || null, (req.headers['user-agent'] || '').slice(0, 300)]
-    );
-    return res.status(401).json({ error: 'invalid_officer_credentials' });
-  }
+  const b = req.body || {};
+  const { officerUsername, officerPassword } = b;
 
-  const b = req.body;
+  // Authenticate the issuing officer either by an active desk session
+  // (started via Google/Microsoft) or by username + password per pass.
+  let user;
+  const desk = verifyDeskSession(req.cookies?.desk_session || '');
+  if (desk) {
+    const u = await db.query(
+      `SELECT * FROM users WHERE id = $1 AND is_active = TRUE AND role IN ('security','management')`,
+      [desk.sub]
+    );
+    user = u.rows[0];
+    if (!user) return res.status(401).json({ error: 'desk_session_invalid' });
+  } else {
+    if (!officerUsername || !officerPassword) {
+      return res.status(400).json({ error: 'officer_and_password_required' });
+    }
+    const u = await db.query(
+      `SELECT * FROM users WHERE username = $1 AND is_active = TRUE AND role IN ('security','management')`,
+      [officerUsername]
+    );
+    user = u.rows[0];
+    const ok = user
+      ? await password.verify(officerPassword, user.password_hash)
+      : await password.verify(officerPassword, '$2a$12$0000000000000000000000000000000000000000000000000000');
+    if (!user || !ok) {
+      await db.query(
+        `INSERT INTO auth_audit_log (username, event, success, ip, user_agent)
+         VALUES ($1,'desk_issue_failed',FALSE,$2,$3)`,
+        [officerUsername, req.ip || null, (req.headers['user-agent'] || '').slice(0, 300)]
+      );
+      return res.status(401).json({ error: 'invalid_officer_credentials' });
+    }
+  }
   try {
     const result = await passService.issuePass({
       unitNumber: b.unitNumber,
