@@ -31,7 +31,7 @@ function showView(name) {
   if (el) el.hidden = false;
   document.querySelectorAll('#nav button').forEach((b) => b.classList.toggle('active', b.dataset.view === name));
   if (name === 'board') loadBoard();
-  if (name === 'admin') { loadAudit(); loadAuthAudit(); loadOverrideCode(); loadExportDatasets(); }
+  if (name === 'admin') { loadAudit(); loadAuthAudit(); loadOverrideCode(); loadExportDatasets(); loadYearEnd(); }
   if (name === 'issue') loadUnits();
   if (name === 'requests') loadRequests();
   if (name !== 'verify') stopCamera();
@@ -227,11 +227,16 @@ async function doVerify(body) {
       <p>Unit <b>${r.pass.unit_number}</b> (${r.pass.kind || ''}) · Plate <b>${r.pass.visitor_plate}</b>${r.pass.visitor_region ? ' (' + r.pass.visitor_region.replace('-', ' ') + ')' : ''}</p>
       <p>Visitor: ${r.pass.visitor_name || '—'}</p>
       <p>Expires: ${new Date(r.pass.expires_at).toLocaleString()}</p>
-      ${r.verdict === 'VALID' ? `<button type="button" onclick="revokePass('${r.pass.id}')">Revoke this pass</button>` : ''}` : `<p>Reason: ${r.reason}</p>`;
+      ${r.verdict === 'VALID' ? `<button type="button" data-action="revoke" data-id="${r.pass.id}">Revoke this pass</button>` : ''}` : `<p>Reason: ${r.reason}</p>`;
     $('#verifyResult').innerHTML = `<div class="result-card"><span class="badge ${r.verdict}">${r.verdict}</span>${detail}</div>`;
   } catch (err) { $('#verifyResult').innerHTML = `<p class="error">${err.message}</p>`; }
 }
-window.revokePass = async (id) => { await api(`/passes/${id}/revoke`, { method: 'POST' }); alert('Pass revoked.'); };
+$('#verifyResult').addEventListener('click', async (e) => {
+  const btn = e.target.closest('button[data-action="revoke"]');
+  if (!btn) return;
+  await api(`/passes/${btn.dataset.id}/revoke`, { method: 'POST' });
+  alert('Pass revoked.');
+});
 
 // --- Admin ---
 $('#unitKind').onchange = (e) => { $('#commercialFields').hidden = e.target.value !== 'commercial'; };
@@ -288,19 +293,28 @@ async function loadRequests() {
       <p>Visitor <b>${name}</b> · Plate <b>${r.visitor_plate}</b>${r.visitor_region ? ' (' + r.visitor_region.replace('-', ' ') + ')' : ''} · ${dur}</p>
       ${r.note ? `<p>Note: ${r.note}</p>` : ''}
       <div class="btn-row">
-        <button type="button" onclick="approveRequest('${r.id}')">Approve &amp; issue</button>
-        <button type="button" class="danger" onclick="denyRequest('${r.id}')">Deny</button>
+        <button type="button" data-action="approve" data-id="${r.id}">Approve &amp; issue</button>
+        <button type="button" class="danger" data-action="deny" data-id="${r.id}">Deny</button>
       </div>
       <p class="msg" id="reqmsg-${r.id}"></p>
     </div>`;
   }).join('');
 }
-window.approveRequest = async (id) => {
+// Event delegation — inline onclick attributes are blocked by CSP
+// (script-src-attr 'none'), so dynamically-rendered buttons bind here.
+$('#requestsList').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-action]');
+  if (!btn) return;
+  if (btn.dataset.action === 'approve') approveRequest(btn.dataset.id);
+  if (btn.dataset.action === 'deny') denyRequest(btn.dataset.id);
+});
+async function approveRequest(id) {
   const msg = $(`#reqmsg-${id}`);
   try {
     const r = await api(`/requests/${id}/approve`, { method: 'POST', body: {} });
-    msg.innerHTML = `✓ Approved. Code <b>${r.shortCode}</b>. <a href="${r.printUrl}" target="_blank">Print pass</a>`;
-    setTimeout(loadRequests, 1200);
+    const mail = r.emailed ? ' · emailed to resident' : (r.emailConfigured ? '' : ' · (email not configured)');
+    msg.innerHTML = `✓ Approved. Code <b>${r.shortCode}</b>. <a href="${r.printUrl}" target="_blank">Print pass</a>${mail}`;
+    setTimeout(loadRequests, 1800);
   } catch (err) {
     if (err.data?.error === 'quota_exceeded') {
       const code = prompt("This unit is at its quota. Enter this week's override code to approve anyway (or Cancel):");
@@ -314,11 +328,11 @@ window.approveRequest = async (id) => {
     } else { msg.textContent = err.message; }
   }
 };
-window.denyRequest = async (id) => {
+async function denyRequest(id) {
   const note = prompt('Reason for denial (optional):') || '';
   try { await api(`/requests/${id}/deny`, { method: 'POST', body: { note } }); loadRequests(); }
   catch (err) { $(`#reqmsg-${id}`).textContent = err.message; }
-};
+}
 
 // --- Export (Management) ---
 async function loadExportDatasets() {
@@ -332,6 +346,35 @@ $('#exportBtn').onclick = () => {
   // Hit the download endpoint in a new tab; the browser saves the file.
   window.open(`/api/admin/export?dataset=${encodeURIComponent(dataset)}&format=${format}`, '_blank');
 };
+
+// --- Year-end archive & clear ---
+async function loadYearEnd() {
+  const s = await api('/admin/year-end/status');
+  const banner = $('#yearEndBanner');
+  if (s.hasPriorData) {
+    banner.hidden = false;
+    banner.innerHTML = `<b>Year-end archive due.</b> There are ${s.total} records from ${s.priorYears.join(', ')} (before ${s.currentYear}). Download all datasets below, then clear prior-year data to keep the system tidy.`;
+  } else {
+    banner.hidden = true;
+  }
+  const c = s.counts;
+  $('#yearEndBox').innerHTML = s.hasPriorData
+    ? `<p>Prior-year records (before ${s.currentYear}): <b>${c.passes}</b> passes, <b>${c.requests}</b> requests, <b>${c.pass_audit}</b> pass-audit, <b>${c.auth_audit}</b> sign-in-audit.</p>
+       <p class="hint">⚠ Download everything you need first — clearing permanently deletes these rows. Units, residents, and vehicles are kept.</p>
+       <button type="button" id="yearEndClearBtn" class="danger">Clear prior-year data</button>
+       <p class="msg" id="yearEndMsg"></p>`
+    : `<p>No prior-year data to archive. Everything is from ${s.currentYear}.</p>`;
+}
+$('#yearEndBox').addEventListener('click', async (e) => {
+  if (!e.target.closest('#yearEndClearBtn')) return;
+  if (!confirm('Have you downloaded all the data you need? This permanently deletes all passes, requests, and audit records from previous years. This cannot be undone.')) return;
+  if (!confirm('Final confirmation — permanently delete prior-year records now?')) return;
+  try {
+    const r = await api('/admin/year-end/clear', { method: 'POST', body: { confirm: true } });
+    $('#yearEndMsg').textContent = `Cleared: ${r.deleted.passes} passes, ${r.deleted.requests} requests, ${r.deleted.pass_audit + r.deleted.auth_audit} audit rows.`;
+    setTimeout(loadYearEnd, 1200);
+  } catch (err) { $('#yearEndMsg').textContent = err.message; }
+});
 
 // --- Board ---
 async function loadBoard() {

@@ -251,3 +251,12 @@ CREATE INDEX IF NOT EXISTS idx_requests_status ON pass_requests(status, created_
 CREATE INDEX IF NOT EXISTS idx_requests_unit   ON pass_requests(unit_id);
 
 COMMIT;
+
+-- ============================================================================
+--  v4 migration — resident email + short public reference code for requests.
+-- ============================================================================
+BEGIN;
+ALTER TABLE pass_requests ADD COLUMN IF NOT EXISTS requester_email TEXT;
+ALTER TABLE pass_requests ADD COLUMN IF NOT EXISTS ref_code        TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_requests_refcode ON pass_requests(ref_code);
+COMMIT;

@@ -145,6 +145,21 @@ creates the real pass (enforcing quota, with the weekly-code override available
 when a unit is at its limit), *Deny* records a reason. Submissions are
 rate-limited.
 
+Each request gets a short **6-character reference code** (e.g. `7VHW9S`). The
+resident can check status any time at the bottom of the portal by entering it
+(`GET /api/resident/status/:ref`). If they provide an **email**, approving the
+request emails them the pass with a **printable PDF attached** (requires SMTP —
+see `.env.example`; without it, approval still works and the email is skipped).
+
+### Year-end archive & clear (Management)
+
+When passes/requests/audit rows exist from a previous calendar year, the
+Management console shows a **"Year-end archive due"** banner prompting a full
+download. After exporting, **Clear prior-year data** (double-confirmed)
+permanently deletes passes, requests, and audit rows from years *before* the
+current one — units, residents, and vehicles are always kept. The action itself
+is recorded in the retained audit log.
+
 ### Data export (Management)
 
 The Management console can download any core dataset — passes, units, residents,

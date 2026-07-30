@@ -370,24 +370,32 @@ test('resident portal: submit request, staff approve issues a pass', async () =>
     visitorPlate: 'req-77', durationPreset: 'tomorrow_noon', note: 'evening',
   });
   assert.equal(submit.status, 201);
-  const reqId = submit.body.requestId;
+  assert.match(submit.body.reference, /^[0-9A-Z]{6}$/); // short public reference
 
   const staff = makeClient();
   await staff('POST', '/api/auth/login', { username: 'security1', password: 'changeme123' });
 
   const pending = await staff('GET', '/api/requests?status=pending');
-  assert.ok(pending.body.some((r) => r.id === reqId && r.visitor_plate === 'REQ77'));
+  const row = pending.body.find((r) => r.visitor_plate === 'REQ77');
+  assert.ok(row, 'pending request should be listed');
 
   const count = await staff('GET', '/api/requests/pending-count');
   assert.ok(count.body.pending >= 1);
 
-  const approve = await staff('POST', `/api/requests/${reqId}/approve`, {});
+  const approve = await staff('POST', `/api/requests/${row.id}/approve`, {});
   assert.equal(approve.status, 201);
   assert.match(approve.body.shortCode, /^[0-9A-Z]{4}-[0-9A-Z]{4}$/);
 
   // A now-approved request cannot be approved again.
-  const again = await staff('POST', `/api/requests/${reqId}/approve`, {});
+  const again = await staff('POST', `/api/requests/${row.id}/approve`, {});
   assert.equal(again.status, 409);
+
+  // Public status lookup by the short reference reflects approval.
+  const anon2 = makeClient();
+  const status = await anon2('GET', `/api/resident/status/${submit.body.reference}`);
+  assert.equal(status.status, 200);
+  assert.equal(status.body.status, 'approved');
+  assert.equal(status.body.unit, '1204');
 });
 
 test('resident portal: staff can deny a request', async () => {
@@ -397,10 +405,14 @@ test('resident portal: staff can deny a request', async () => {
   });
   const staff = makeClient();
   await staff('POST', '/api/auth/login', { username: 'manager1', password: 'changeme123' });
-  const deny = await staff('POST', `/api/requests/${submit.body.requestId}/deny`, { note: 'not this week' });
-  assert.equal(deny.status, 200);
   const pending = await staff('GET', '/api/requests?status=pending');
-  assert.equal(pending.body.some((r) => r.id === submit.body.requestId), false);
+  const row = pending.body.find((r) => r.visitor_plate === 'DENY1');
+  const deny = await staff('POST', `/api/requests/${row.id}/deny`, { note: 'not this week' });
+  assert.equal(deny.status, 200);
+
+  const after = await staff('GET', `/api/resident/status/${submit.body.reference}`);
+  assert.equal(after.body.status, 'denied');
+  assert.equal(after.body.note, 'not this week');
 });
 
 test('export returns CSV, XLSX, and PDF with correct content types', async () => {
@@ -425,6 +437,37 @@ test('export returns CSV, XLSX, and PDF with correct content types', async () =>
 
   const bad = await mgr('GET', '/api/admin/export?dataset=nope&format=csv');
   assert.equal(bad.status, 404);
+});
+
+test('year-end status reports prior-year data and clear purges it', async () => {
+  // Seed one pass dated to last year directly.
+  const lastYear = new Date().getFullYear() - 1;
+  const unit = await db.query(`SELECT id FROM units WHERE unit_number = '1204'`);
+  const user = await db.query(`SELECT id FROM users WHERE username = 'security1'`);
+  await db.query(
+    `INSERT INTO visitor_passes
+       (unit_id, visitor_plate, issued_by, issued_at, expires_at, calendar_year, barcode_sig)
+     VALUES ($1,'OLDYR1',$2, make_timestamptz($3,6,15,10,0,0), make_timestamptz($3,6,16,10,0,0), $3, 'x')`,
+    [unit.rows[0].id, user.rows[0].id, lastYear]
+  );
+
+  const mgr = makeClient();
+  await mgr('POST', '/api/auth/login', { username: 'manager1', password: 'changeme123' });
+
+  const before = await mgr('GET', '/api/admin/year-end/status');
+  assert.equal(before.body.hasPriorData, true);
+  assert.ok(before.body.priorYears.includes(lastYear));
+
+  // Confirmation is mandatory.
+  const noConfirm = await mgr('POST', '/api/admin/year-end/clear', {});
+  assert.equal(noConfirm.status, 400);
+
+  const cleared = await mgr('POST', '/api/admin/year-end/clear', { confirm: true });
+  assert.equal(cleared.status, 200);
+  assert.ok(cleared.body.deleted.passes >= 1);
+
+  const after = await mgr('GET', '/api/admin/year-end/status');
+  assert.equal(after.body.hasPriorData, false);
 });
 
 test('the print sheet is Letter-sized and embeds a signed QR', async () => {

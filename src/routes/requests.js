@@ -3,6 +3,8 @@ const express = require('express');
 const db = require('./../db');
 const { requireAuth, requireRole } = require('./../auth/middleware');
 const passService = require('./../services/passService');
+const mailer = require('./../services/mailer');
+const { buildPassPdf } = require('./../services/passPdf');
 
 const router = express.Router();
 router.use(requireAuth, requireRole('security', 'management'));
@@ -67,12 +69,37 @@ router.post('/:id/approve', async (req, res) => {
         WHERE id = $3`,
       [result.pass.id, req.user.id, pr.id]
     );
+
+    // Email the resident their pass (with a printable PDF) if we have an address.
+    let emailed = false;
+    if (pr.requester_email) {
+      try {
+        const pdf = await buildPassPdf({
+          pass: result.pass, token: result.token, shortCode: result.shortCode,
+          issuerName: req.user.name, issuerRole: req.user.role,
+        });
+        const when = new Date(result.pass.expires_at).toLocaleString();
+        const outcome = await mailer.sendMail({
+          to: pr.requester_email,
+          subject: `Your visitor parking pass — Unit ${pr.unit_number} (ref ${pr.ref_code})`,
+          text: `Your visitor parking pass request (reference ${pr.ref_code}) has been approved.\n\n`
+              + `Unit: ${pr.unit_number}\nVisitor plate: ${result.pass.visitor_plate}\n`
+              + `Valid until: ${when}\nVerification code: ${result.shortCode}\n\n`
+              + `The printable pass is attached. Display it on the vehicle dashboard with the plate visible.`,
+          attachments: [{ filename: `parking-pass-${pr.ref_code}.pdf`, content: pdf }],
+        });
+        emailed = outcome.sent;
+      } catch (e) { /* email failure must not fail the approval */ }
+    }
+
     res.status(201).json({
       ok: true,
       passId: result.pass.id,
       shortCode: result.shortCode,
       printUrl: `/api/passes/${result.pass.id}/print`,
       usedOverride: result.usedOverride,
+      emailed,
+      emailConfigured: mailer.isConfigured(),
     });
   } catch (err) {
     const codeMap = {

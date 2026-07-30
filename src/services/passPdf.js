@@ -1,0 +1,61 @@
+'use strict';
+const PDFDocument = require('pdfkit');
+const QRCode = require('qrcode');
+
+// Build a one-page PDF of a visitor pass (QR + details + short code) as a
+// Buffer, suitable for emailing to a resident. Mirrors the on-screen sheet.
+async function buildPassPdf({ pass, token, shortCode, issuerName, issuerRole }) {
+  const qrPng = await QRCode.toBuffer(token, { errorCorrectionLevel: 'M', margin: 1, scale: 8 });
+
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ size: 'LETTER', margin: 54 });
+    const chunks = [];
+    doc.on('data', (c) => chunks.push(c));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+
+    const W = doc.page.width - doc.page.margins.left * 2;
+
+    doc.rect(doc.page.margins.left, doc.y, W, 4).fill('#10151c');
+    doc.moveDown(0.5);
+    doc.fillColor('#10151c').fontSize(26).font('Helvetica-Bold')
+       .text('VISITOR PARKING PASS', { align: 'center' });
+    doc.fontSize(12).font('Helvetica').fillColor('#55606c')
+       .text('Yorkdale Condominium II', { align: 'center' });
+    doc.moveDown(1);
+
+    // Unit banner
+    doc.fillColor('#10151c').fontSize(14).text(`Authorized for Unit ${pass.unit_number}`, { align: 'center' });
+    doc.moveDown(1);
+
+    const region = pass.visitor_region ? ` (${String(pass.visitor_region).replace('-', ' ')})` : '';
+    const rows = [
+      ['Visitor licence plate', `${pass.visitor_plate}${region}`],
+      ['Visitor name', pass.visitor_name || '—'],
+      ['Issued', new Date(pass.issued_at).toLocaleString()],
+      ['Expires', new Date(pass.expires_at).toLocaleString()],
+      ['Issued by', `${issuerName} (${issuerRole})`],
+    ];
+    doc.fontSize(12);
+    rows.forEach(([k, v]) => {
+      doc.font('Helvetica-Bold').fillColor('#55606c').text(k + ':', { continued: true });
+      doc.font('Helvetica').fillColor('#10151c').text(' ' + v);
+      doc.moveDown(0.3);
+    });
+
+    doc.moveDown(1);
+    const qrSize = 180;
+    doc.image(qrPng, (doc.page.width - qrSize) / 2, doc.y, { width: qrSize });
+    doc.moveDown(0.5);
+    doc.y += qrSize + 6;
+    doc.fontSize(16).font('Courier-Bold').fillColor('#10151c')
+       .text(`Verification code: ${shortCode}`, { align: 'center' });
+    doc.moveDown(0.5);
+    doc.fontSize(9).font('Helvetica').fillColor('#8b95a1')
+       .text('Security: scan the QR or key in the verification code. This pass is cryptographically signed and cannot be altered. Display it on the vehicle dashboard with the plate visible.', { align: 'center' });
+
+    doc.end();
+  });
+}
+
+module.exports = { buildPassPdf };

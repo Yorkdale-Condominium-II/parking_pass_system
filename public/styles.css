@@ -57,3 +57,5 @@ details.card summary + form { margin-top: 12px; }
 #lookupBy { max-width: 180px; }
 .btn-row button.danger { background: #fee2e2; color: var(--danger); border-color: #f3b4b0; }
 #exportDataset, #exportFormat { max-width: 220px; }
+.banner { background: #fef3c7; border: 2px solid #f59e0b; color: #7c4a03; padding: 14px 18px; border-radius: 8px; margin-bottom: 16px; }
+.banner b { color: #7c2d12; }

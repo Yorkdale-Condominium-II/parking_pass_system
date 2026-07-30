@@ -136,6 +136,7 @@
   <!-- Management: Admin -->
   <section id="view-admin" class="view" hidden>
     <h1>Management Console</h1>
+    <div id="yearEndBanner" class="banner" hidden></div>
     <div class="cols">
       <form id="userForm" class="card">
         <h2>Create user</h2>
@@ -176,6 +177,11 @@
         </select>
         <button type="button" id="exportBtn">Download</button>
       </div>
+    </div>
+
+    <div class="card" id="yearEndCard">
+      <h2>Year-end archive</h2>
+      <div id="yearEndBox">…</div>
     </div>
 
     <div class="card" id="overrideCodeCard">

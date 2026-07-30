@@ -168,6 +168,51 @@ router.get('/auth-audit', async (req, res) => {
   res.json(r.rows);
 });
 
+// --- Year-end archive & clear ----------------------------------------------
+// Reports how much prior-year data exists (the annual "download then clear"
+// prompt) and, on explicit confirmation, purges passes/requests/audit rows from
+// years BEFORE the current one. Units, residents, and vehicles are never touched.
+router.get('/year-end/status', async (req, res) => {
+  const year = new Date().getFullYear();
+  const q = await db.query(
+    `SELECT
+       (SELECT COUNT(*) FROM visitor_passes WHERE calendar_year < $1)::int AS passes,
+       (SELECT COUNT(*) FROM pass_requests WHERE EXTRACT(YEAR FROM created_at) < $1)::int AS requests,
+       (SELECT COUNT(*) FROM pass_audit_log WHERE EXTRACT(YEAR FROM created_at) < $1)::int AS pass_audit,
+       (SELECT COUNT(*) FROM auth_audit_log WHERE EXTRACT(YEAR FROM created_at) < $1)::int AS auth_audit`,
+    [year]
+  );
+  const priorYears = await db.query(
+    `SELECT DISTINCT calendar_year FROM visitor_passes WHERE calendar_year < $1 ORDER BY calendar_year`,
+    [year]
+  );
+  const counts = q.rows[0];
+  const total = counts.passes + counts.requests + counts.pass_audit + counts.auth_audit;
+  res.json({ currentYear: year, counts, total, hasPriorData: total > 0,
+             priorYears: priorYears.rows.map((r) => r.calendar_year) });
+});
+
+router.post('/year-end/clear', async (req, res) => {
+  if (!req.body || req.body.confirm !== true) {
+    return res.status(400).json({ error: 'confirmation_required' });
+  }
+  const year = new Date().getFullYear();
+  const deleted = await db.withTransaction(async (client) => {
+    const a = await client.query(`DELETE FROM pass_audit_log WHERE EXTRACT(YEAR FROM created_at) < $1`, [year]);
+    const b = await client.query(`DELETE FROM auth_audit_log WHERE EXTRACT(YEAR FROM created_at) < $1`, [year]);
+    const c = await client.query(`DELETE FROM pass_requests WHERE EXTRACT(YEAR FROM created_at) < $1`, [year]);
+    const d = await client.query(`DELETE FROM visitor_passes WHERE calendar_year < $1`, [year]);
+    // Record the archive action in this year's (retained) audit log.
+    await client.query(
+      `INSERT INTO pass_audit_log (action, actor_id, detail) VALUES ('year_end_clear',$1,$2)`,
+      [req.user.id, { before_year: year, deleted: {
+        pass_audit: a.rowCount, auth_audit: b.rowCount, requests: c.rowCount, passes: d.rowCount } }]
+    );
+    return { passes: d.rowCount, requests: c.rowCount, pass_audit: a.rowCount, auth_audit: b.rowCount };
+  });
+  res.json({ ok: true, deleted });
+});
+
 // --- Data export (CSV / XLSX / PDF) ----------------------------------------
 router.get('/export/datasets', (req, res) => {
   res.json(Object.entries(exporter.DATASETS).map(([id, d]) => ({ id, label: d.label })));

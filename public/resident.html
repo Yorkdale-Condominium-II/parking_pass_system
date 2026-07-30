@@ -22,8 +22,9 @@
       <label>Your unit number <input name="unitNumber" required placeholder="e.g. 1204"></label>
       <div class="cols">
         <label>Your name <input name="requesterName" required></label>
-        <label>Your phone or email <input name="requesterContact" placeholder="so staff can reach you"></label>
+        <label>Your phone <input name="requesterContact" placeholder="so staff can reach you"></label>
       </div>
+      <label>Your email <input name="requesterEmail" type="email" placeholder="we'll email your pass here once it's approved"></label>
 
       <h2>Visitor details</h2>
       <div class="cols">
@@ -57,6 +58,16 @@
     </form>
 
     <div id="reqResult"></div>
+
+    <div class="card">
+      <h2>Check a request</h2>
+      <p class="hint">Enter the reference code you received when you submitted.</p>
+      <form id="statusForm" class="inline">
+        <input name="ref" placeholder="e.g. K7Q4M2" autocomplete="off" required>
+        <button>Check status</button>
+      </form>
+      <div id="statusResult"></div>
+    </div>
   </section>
 </main>
 
