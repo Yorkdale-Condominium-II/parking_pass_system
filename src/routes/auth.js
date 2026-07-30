@@ -12,6 +12,7 @@ const loginLimiter = rateLimit({
   max: 20,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test', // don't throttle the test suite
 });
 
 // Record a sign-in event. Never throws into the request path.

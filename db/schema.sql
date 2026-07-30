@@ -143,7 +143,10 @@ CREATE INDEX IF NOT EXISTS idx_audit_time  ON pass_audit_log(created_at);
 -- ---------------------------------------------------------------------------
 --  View: passes issued per unit per calendar year (excludes revoked)
 -- ---------------------------------------------------------------------------
-CREATE OR REPLACE VIEW unit_year_usage AS
+-- Dropped first because a later migration changes this view's column set, and
+-- CREATE OR REPLACE cannot add/drop/reorder view columns.
+DROP VIEW IF EXISTS unit_year_usage;
+CREATE VIEW unit_year_usage AS
 SELECT
     u.id            AS unit_id,
     u.unit_number   AS unit_number,
@@ -208,5 +211,43 @@ SELECT
 FROM units u
 JOIN visitor_passes vp ON vp.unit_id = u.id
 GROUP BY u.id, u.unit_number, u.kind, vp.calendar_year;
+
+COMMIT;
+
+-- ============================================================================
+--  v3 migration — resident-portal pass requests. Additive, idempotent.
+-- ============================================================================
+BEGIN;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'request_status') THEN
+    CREATE TYPE request_status AS ENUM ('pending', 'approved', 'denied');
+  END IF;
+END$$;
+
+-- Visitor-pass requests submitted by residents via the public portal. A request
+-- is a proposal only; a pass is created (and the quota consumed) when Security/
+-- Management approves it.
+CREATE TABLE IF NOT EXISTS pass_requests (
+    id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    unit_id            UUID           NOT NULL REFERENCES units(id) ON DELETE CASCADE,
+    requester_name     TEXT           NOT NULL,
+    requester_contact  TEXT,                       -- phone or email
+    visitor_first_name TEXT,
+    visitor_last_name  TEXT,
+    visitor_plate      TEXT           NOT NULL,
+    visitor_region     TEXT,                        -- e.g. 'CA-ON'
+    duration_preset    TEXT           NOT NULL DEFAULT 'today',
+    note               TEXT,
+    status             request_status NOT NULL DEFAULT 'pending',
+    pass_id            UUID           REFERENCES visitor_passes(id) ON DELETE SET NULL,
+    decided_by         UUID           REFERENCES users(id),
+    decided_at         TIMESTAMPTZ,
+    decision_note      TEXT,
+    created_at         TIMESTAMPTZ    NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_requests_status ON pass_requests(status, created_at);
+CREATE INDEX IF NOT EXISTS idx_requests_unit   ON pass_requests(unit_id);
 
 COMMIT;

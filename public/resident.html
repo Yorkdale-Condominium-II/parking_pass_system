@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Yorkdale Condominium II — Visitor Pass Request</title>
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<header id="topbar">
+  <div class="brand">🅿️ Yorkdale Condominium II</div>
+  <div class="who"><span>Resident Visitor Pass Request</span></div>
+</header>
+
+<main id="app">
+  <section class="view">
+    <h1>Request a Visitor Parking Pass</h1>
+    <p class="hint">Submit the details below. Your request is reviewed by building staff — you'll be contacted, or the pass will be waiting at the desk, once it's approved. Submitting a request does not guarantee a pass; each unit has an annual limit.</p>
+
+    <form id="reqForm" class="card">
+      <h2>Your details</h2>
+      <label>Your unit number <input name="unitNumber" required placeholder="e.g. 1204"></label>
+      <div class="cols">
+        <label>Your name <input name="requesterName" required></label>
+        <label>Your phone or email <input name="requesterContact" placeholder="so staff can reach you"></label>
+      </div>
+
+      <h2>Visitor details</h2>
+      <div class="cols">
+        <label>Visitor first name <input name="visitorFirstName"></label>
+        <label>Visitor last name <input name="visitorLastName"></label>
+      </div>
+      <div class="cols">
+        <label>Plate country
+          <select name="visitorCountry" id="visitorCountry">
+            <option value="CA">Canada</option>
+            <option value="US">United States</option>
+          </select>
+        </label>
+        <label>Province / State
+          <select name="visitorRegion" id="visitorRegion"></select>
+        </label>
+      </div>
+      <label>Visitor licence plate <input name="visitorPlate" required></label>
+
+      <label>When is the pass needed?</label>
+      <div class="btn-row" id="durationRow">
+        <button type="button" class="dur active" data-preset="today">Rest of today (until midnight)</button>
+        <button type="button" class="dur" data-preset="tomorrow_noon">Until noon tomorrow</button>
+      </div>
+      <input type="hidden" name="durationPreset" id="durationPreset" value="today">
+
+      <label>Note for staff (optional) <textarea name="note" rows="2" placeholder="e.g. arriving this evening"></textarea></label>
+
+      <button type="submit">Submit request</button>
+      <p class="error" id="reqError"></p>
+    </form>
+
+    <div id="reqResult"></div>
+  </section>
+</main>
+
+<script src="/resident.js"></script>
+</body>
+</html>

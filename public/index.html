@@ -24,6 +24,7 @@
       <p class="error" id="loginError"></p>
     </form>
     <p class="hint">Seeded demo logins — security1 / manager1 / board1 (password: changeme123)</p>
+    <p class="hint">Are you a resident? <a href="/resident.html">Request a visitor pass →</a></p>
   </section>
 
   <!-- Security / Management: Lookup -->
@@ -124,6 +125,14 @@
     <div id="verifyResult"></div>
   </section>
 
+  <!-- Security / Management: Resident requests -->
+  <section id="view-requests" class="view" hidden>
+    <h1>Resident Pass Requests</h1>
+    <p class="hint">Requests submitted through the resident portal. Approving issues a real pass (and uses the unit's quota); denying records a reason.</p>
+    <button id="refreshRequests">Refresh</button>
+    <div id="requestsList"></div>
+  </section>
+
   <!-- Management: Admin -->
   <section id="view-admin" class="view" hidden>
     <h1>Management Console</h1>
@@ -153,6 +162,20 @@
         <button>Add unit</button>
         <p class="msg" id="unitMsg"></p>
       </form>
+    </div>
+
+    <div class="card" id="exportCard">
+      <h2>Download data</h2>
+      <p class="hint">CSV and Excel files open directly in Excel and Google Sheets (File → Import).</p>
+      <div class="inline">
+        <select id="exportDataset"></select>
+        <select id="exportFormat">
+          <option value="csv">CSV</option>
+          <option value="xlsx">Excel (.xlsx)</option>
+          <option value="pdf">PDF</option>
+        </select>
+        <button type="button" id="exportBtn">Download</button>
+      </div>
     </div>
 
     <div class="card" id="overrideCodeCard">

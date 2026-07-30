@@ -134,6 +134,25 @@ Other machines then browse to `http://<that-ip>:3000`. This runs over plain
 HTTP on the local network — fine for a trusted LAN, but put it behind HTTPS (a
 reverse proxy such as Caddy or nginx) before exposing it beyond that.
 
+### Resident portal (public request page)
+
+`public/resident.html` (served at `/resident.html`) is a login-free page where
+residents submit a **visitor-pass request** — unit, their contact, visitor
+name/plate/region, and when it's needed. A request creates a `pending` record
+only; **no pass exists and no quota is consumed until staff approve it**.
+Security/Management review requests under the **Requests** tab: *Approve & issue*
+creates the real pass (enforcing quota, with the weekly-code override available
+when a unit is at its limit), *Deny* records a reason. Submissions are
+rate-limited.
+
+### Data export (Management)
+
+The Management console can download any core dataset — passes, units, residents,
+vehicles, pass audit, sign-in audit, requests — as **CSV**, **Excel (.xlsx)**, or
+**PDF** (`GET /api/admin/export?dataset=…&format=…`). CSV and XLSX open directly
+in Excel and Google Sheets (File → Import). A native push into Google Sheets
+would use the Google API and is deferred alongside SSO.
+
 ### Running the test suite
 
 `npm test` runs an end-to-end integration suite (`test/integration.test.js`,

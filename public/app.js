@@ -16,11 +16,11 @@ const api = async (path, opts = {}) => {
 };
 
 const ROLE_VIEWS = {
-  security:   ['lookup', 'issue', 'verify'],
-  management: ['lookup', 'issue', 'verify', 'admin', 'board'],
+  security:   ['lookup', 'issue', 'verify', 'requests'],
+  management: ['lookup', 'issue', 'verify', 'requests', 'admin', 'board'],
   board:      ['board'],
 };
-const VIEW_LABELS = { lookup: 'Lookup', issue: 'Issue Pass', verify: 'Verify', admin: 'Management', board: 'Dashboard' };
+const VIEW_LABELS = { lookup: 'Lookup', issue: 'Issue Pass', verify: 'Verify', requests: 'Requests', admin: 'Management', board: 'Dashboard' };
 let currentUser = null;
 let unitIndex = {};   // unit_number -> {kind, business_name}
 let regionData = null;
@@ -31,15 +31,25 @@ function showView(name) {
   if (el) el.hidden = false;
   document.querySelectorAll('#nav button').forEach((b) => b.classList.toggle('active', b.dataset.view === name));
   if (name === 'board') loadBoard();
-  if (name === 'admin') { loadAudit(); loadAuthAudit(); loadOverrideCode(); }
+  if (name === 'admin') { loadAudit(); loadAuthAudit(); loadOverrideCode(); loadExportDatasets(); }
   if (name === 'issue') loadUnits();
+  if (name === 'requests') loadRequests();
   if (name !== 'verify') stopCamera();
+}
+
+async function refreshPendingBadge() {
+  try {
+    const { pending } = await api('/requests/pending-count');
+    const btn = document.querySelector('#nav button[data-view="requests"]');
+    if (btn) btn.textContent = VIEW_LABELS.requests + (pending ? ` (${pending})` : '');
+  } catch {}
 }
 
 function renderNav() {
   const views = ROLE_VIEWS[currentUser.role] || [];
   $('#nav').innerHTML = views.map((v) => `<button data-view="${v}">${VIEW_LABELS[v]}</button>`).join('');
   document.querySelectorAll('#nav button').forEach((b) => (b.onclick = () => showView(b.dataset.view)));
+  if (views.includes('requests')) refreshPendingBadge();
   showView(views[0]);
 }
 
@@ -263,6 +273,65 @@ async function loadAuthAudit() {
   $('#authAuditTable').innerHTML = `<table><tr><th>Time</th><th>Event</th><th>User</th><th>IP</th></tr>` +
     rows.map((r) => `<tr><td>${new Date(r.created_at).toLocaleString()}</td><td><span class="badge ${r.success ? 'VALID' : 'REVOKED'}">${r.event}</span></td><td>${r.actor_name || r.username} ${r.actor_role ? '(' + r.actor_role + ')' : ''}</td><td>${r.ip || '—'}</td></tr>`).join('') + `</table>`;
 }
+
+// --- Resident requests (staff review) ---
+$('#refreshRequests').onclick = loadRequests;
+async function loadRequests() {
+  const rows = await api('/requests?status=pending');
+  if (!rows.length) { $('#requestsList').innerHTML = '<p>No pending requests.</p>'; refreshPendingBadge(); return; }
+  $('#requestsList').innerHTML = rows.map((r) => {
+    const name = [r.visitor_first_name, r.visitor_last_name].filter(Boolean).join(' ') || '—';
+    const dur = r.duration_preset === 'tomorrow_noon' ? 'Until noon tomorrow' : 'Rest of today';
+    return `<div class="result-card" data-id="${r.id}">
+      <h3>Unit ${r.unit_number} ${r.kind === 'commercial' ? '(commercial)' : ''}</h3>
+      <p>Requested by <b>${r.requester_name}</b>${r.requester_contact ? ' · ' + r.requester_contact : ''} · ${new Date(r.created_at).toLocaleString()}</p>
+      <p>Visitor <b>${name}</b> · Plate <b>${r.visitor_plate}</b>${r.visitor_region ? ' (' + r.visitor_region.replace('-', ' ') + ')' : ''} · ${dur}</p>
+      ${r.note ? `<p>Note: ${r.note}</p>` : ''}
+      <div class="btn-row">
+        <button type="button" onclick="approveRequest('${r.id}')">Approve &amp; issue</button>
+        <button type="button" class="danger" onclick="denyRequest('${r.id}')">Deny</button>
+      </div>
+      <p class="msg" id="reqmsg-${r.id}"></p>
+    </div>`;
+  }).join('');
+}
+window.approveRequest = async (id) => {
+  const msg = $(`#reqmsg-${id}`);
+  try {
+    const r = await api(`/requests/${id}/approve`, { method: 'POST', body: {} });
+    msg.innerHTML = `✓ Approved. Code <b>${r.shortCode}</b>. <a href="${r.printUrl}" target="_blank">Print pass</a>`;
+    setTimeout(loadRequests, 1200);
+  } catch (err) {
+    if (err.data?.error === 'quota_exceeded') {
+      const code = prompt("This unit is at its quota. Enter this week's override code to approve anyway (or Cancel):");
+      if (!code) { msg.textContent = 'Not approved (unit at quota).'; return; }
+      const reason = prompt('Override reason:') || 'staff override';
+      try {
+        const r2 = await api(`/requests/${id}/approve`, { method: 'POST', body: { override: true, overrideCode: code, overrideReason: reason } });
+        msg.innerHTML = `✓ Approved with override. Code <b>${r2.shortCode}</b>. <a href="${r2.printUrl}" target="_blank">Print pass</a>`;
+        setTimeout(loadRequests, 1200);
+      } catch (e2) { msg.textContent = e2.message; }
+    } else { msg.textContent = err.message; }
+  }
+};
+window.denyRequest = async (id) => {
+  const note = prompt('Reason for denial (optional):') || '';
+  try { await api(`/requests/${id}/deny`, { method: 'POST', body: { note } }); loadRequests(); }
+  catch (err) { $(`#reqmsg-${id}`).textContent = err.message; }
+};
+
+// --- Export (Management) ---
+async function loadExportDatasets() {
+  if ($('#exportDataset').options.length) return;
+  const sets = await api('/admin/export/datasets');
+  $('#exportDataset').innerHTML = sets.map((s) => `<option value="${s.id}">${s.label}</option>`).join('');
+}
+$('#exportBtn').onclick = () => {
+  const dataset = $('#exportDataset').value;
+  const format = $('#exportFormat').value;
+  // Hit the download endpoint in a new tab; the browser saves the file.
+  window.open(`/api/admin/export?dataset=${encodeURIComponent(dataset)}&format=${format}`, '_blank');
+};
 
 // --- Board ---
 async function loadBoard() {

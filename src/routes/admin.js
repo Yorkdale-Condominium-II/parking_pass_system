@@ -6,6 +6,7 @@ const { requireAuth, requireRole } = require('./../auth/middleware');
 const { normalizePlate } = require('./../services/passService');
 const config = require('./../config');
 const barcode = require('./../crypto/barcode');
+const exporter = require('./../services/export');
 
 const router = express.Router();
 
@@ -165,6 +166,43 @@ router.get('/auth-audit', async (req, res) => {
     [limit]
   );
   res.json(r.rows);
+});
+
+// --- Data export (CSV / XLSX / PDF) ----------------------------------------
+router.get('/export/datasets', (req, res) => {
+  res.json(Object.entries(exporter.DATASETS).map(([id, d]) => ({ id, label: d.label })));
+});
+
+router.get('/export', async (req, res) => {
+  const dataset = String(req.query.dataset || 'passes');
+  const format = String(req.query.format || 'csv').toLowerCase();
+  let data;
+  try {
+    data = await exporter.fetchDataset(dataset);
+  } catch (err) {
+    if (err.code === 'unknown_dataset') return res.status(404).json({ error: 'unknown_dataset' });
+    throw err;
+  }
+  const stamp = new Date().toISOString().slice(0, 10);
+  const base = `${dataset}_${stamp}`;
+
+  if (format === 'csv') {
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${base}.csv"`);
+    return res.send(exporter.toCsv(data.def, data.rows));
+  }
+  if (format === 'xlsx') {
+    const buf = await exporter.toXlsx(data.def, data.rows);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${base}.xlsx"`);
+    return res.send(Buffer.from(buf));
+  }
+  if (format === 'pdf') {
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${base}.pdf"`);
+    return exporter.toPdf(data.def, data.rows, res); // streams + ends the response
+  }
+  return res.status(400).json({ error: 'unknown_format' });
 });
 
 module.exports = router;

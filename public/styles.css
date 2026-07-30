@@ -55,3 +55,5 @@ small.hint { display: block; margin: -8px 0 12px; }
 details.card summary { cursor: pointer; font-weight: 600; }
 details.card summary + form { margin-top: 12px; }
 #lookupBy { max-width: 180px; }
+.btn-row button.danger { background: #fee2e2; color: var(--danger); border-color: #f3b4b0; }
+#exportDataset, #exportFormat { max-width: 220px; }

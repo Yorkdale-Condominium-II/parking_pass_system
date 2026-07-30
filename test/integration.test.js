@@ -19,6 +19,7 @@ const path = require('node:path');
 
 // Point the app at the test database BEFORE requiring any app module, and make
 // sure required secrets exist so config.js does not throw.
+process.env.NODE_ENV = 'test'; // disables rate limiters so the suite isn't throttled
 if (process.env.TEST_DATABASE_URL) process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-jwt-secret-value-for-integration-tests';
 process.env.BARCODE_SECRET = process.env.BARCODE_SECRET || 'test-barcode-secret-different-value-xyz';
@@ -46,7 +47,7 @@ function makeClient() {
     const text = await res.text();
     let json;
     try { json = text ? JSON.parse(text) : null; } catch { json = { _raw: text }; }
-    return { status: res.status, body: json, text };
+    return { status: res.status, body: json, text, contentType: res.headers.get('content-type') };
   };
 }
 
@@ -55,7 +56,7 @@ test.before(async () => {
   const schema = fs.readFileSync(path.join(__dirname, '..', 'db', 'schema.sql'), 'utf8');
   await db.query(schema);
   await db.query(
-    `TRUNCATE auth_audit_log, pass_audit_log, override_grants, visitor_passes,
+    `TRUNCATE pass_requests, auth_audit_log, pass_audit_log, override_grants, visitor_passes,
               registered_vehicles, residents, units, users RESTART IDENTITY CASCADE`
   );
 
@@ -353,6 +354,77 @@ test('management admin can create a user and read the audit log', async () => {
   assert.equal(audit.status, 200);
   assert.ok(Array.isArray(audit.body));
   assert.ok(audit.body.some((r) => r.action === 'issued'));
+});
+
+test('resident portal: submit request, staff approve issues a pass', async () => {
+  const anon = makeClient(); // no login — public portal
+
+  const bad = await anon('POST', '/api/resident/requests', {
+    unitNumber: 'NOPE', requesterName: 'Sam', visitorPlate: 'REQ1',
+  });
+  assert.equal(bad.status, 404);
+
+  const submit = await anon('POST', '/api/resident/requests', {
+    unitNumber: '1204', requesterName: 'Dana Resident', requesterContact: '416-555-0142',
+    visitorFirstName: 'Guest', visitorLastName: 'One', visitorCountry: 'CA', visitorRegion: 'ON',
+    visitorPlate: 'req-77', durationPreset: 'tomorrow_noon', note: 'evening',
+  });
+  assert.equal(submit.status, 201);
+  const reqId = submit.body.requestId;
+
+  const staff = makeClient();
+  await staff('POST', '/api/auth/login', { username: 'security1', password: 'changeme123' });
+
+  const pending = await staff('GET', '/api/requests?status=pending');
+  assert.ok(pending.body.some((r) => r.id === reqId && r.visitor_plate === 'REQ77'));
+
+  const count = await staff('GET', '/api/requests/pending-count');
+  assert.ok(count.body.pending >= 1);
+
+  const approve = await staff('POST', `/api/requests/${reqId}/approve`, {});
+  assert.equal(approve.status, 201);
+  assert.match(approve.body.shortCode, /^[0-9A-Z]{4}-[0-9A-Z]{4}$/);
+
+  // A now-approved request cannot be approved again.
+  const again = await staff('POST', `/api/requests/${reqId}/approve`, {});
+  assert.equal(again.status, 409);
+});
+
+test('resident portal: staff can deny a request', async () => {
+  const anon = makeClient();
+  const submit = await anon('POST', '/api/resident/requests', {
+    unitNumber: '1204', requesterName: 'Pat', visitorPlate: 'DENY1',
+  });
+  const staff = makeClient();
+  await staff('POST', '/api/auth/login', { username: 'manager1', password: 'changeme123' });
+  const deny = await staff('POST', `/api/requests/${submit.body.requestId}/deny`, { note: 'not this week' });
+  assert.equal(deny.status, 200);
+  const pending = await staff('GET', '/api/requests?status=pending');
+  assert.equal(pending.body.some((r) => r.id === submit.body.requestId), false);
+});
+
+test('export returns CSV, XLSX, and PDF with correct content types', async () => {
+  const mgr = makeClient();
+  await mgr('POST', '/api/auth/login', { username: 'manager1', password: 'changeme123' });
+
+  const sets = await mgr('GET', '/api/admin/export/datasets');
+  assert.ok(sets.body.some((s) => s.id === 'passes'));
+
+  const csv = await mgr('GET', '/api/admin/export?dataset=units&format=csv');
+  assert.equal(csv.status, 200);
+  assert.match(csv.contentType, /text\/csv/);
+  assert.match(csv.text.split('\n')[0], /Unit/); // header row
+
+  const xlsx = await mgr('GET', '/api/admin/export?dataset=units&format=xlsx');
+  assert.equal(xlsx.status, 200);
+  assert.match(xlsx.contentType, /spreadsheetml/);
+
+  const pdf = await mgr('GET', '/api/admin/export?dataset=units&format=pdf');
+  assert.equal(pdf.status, 200);
+  assert.match(pdf.contentType, /application\/pdf/);
+
+  const bad = await mgr('GET', '/api/admin/export?dataset=nope&format=csv');
+  assert.equal(bad.status, 404);
 });
 
 test('the print sheet is Letter-sized and embeds a signed QR', async () => {
