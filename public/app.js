@@ -29,15 +29,28 @@ let currentUser = null;
 let unitIndex = {};   // unit_number -> {kind, business_name}
 let regionData = null;
 let orgName = 'Yorkdale Condominium II';
+let appVersion = '';
 
 async function loadSettings() {
-  try { orgName = (await api('/settings')).orgName || orgName; } catch {}
+  try {
+    const s = await api('/settings');
+    orgName = s.orgName || orgName;
+    appVersion = s.version || appVersion;
+  } catch {}
   applyOrgName();
+  applyVersion();
 }
 function applyOrgName() {
-  const brand = document.querySelector('#topbar .brand');
-  if (brand) brand.textContent = `🅿️ ${orgName}`;
+  const brandName = $('#brandName');
+  if (brandName) brandName.textContent = orgName;
   if (currentUser) $('#whoami').innerHTML = `<b>${orgName}</b> · ${currentUser.name}`;
+}
+function applyVersion() {
+  if (!appVersion) return;
+  const badge = $('#appVersion');
+  if (badge) badge.textContent = `v${appVersion}`;
+  // Surface the version in the browser tab too.
+  document.title = `${orgName} — Parking Management (v${appVersion})`;
 }
 
 function showView(name) {

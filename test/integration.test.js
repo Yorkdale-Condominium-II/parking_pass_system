@@ -636,6 +636,8 @@ test('org/condo name is readable and management can change it', async () => {
   const def = await anon('GET', '/api/settings');
   assert.equal(def.status, 200);
   assert.ok(def.body.orgName);
+  // The public settings payload carries the app version (for the header/tab).
+  assert.equal(def.body.version, require('../package.json').version);
 
   const mgr = makeClient();
   await mgr('POST', '/api/auth/login', { username: 'manager1', password: 'changeme123' });

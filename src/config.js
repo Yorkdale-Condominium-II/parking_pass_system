@@ -13,6 +13,9 @@ function required(name) {
 module.exports = {
   port: parseInt(process.env.PORT || '3000', 10),
   env: process.env.NODE_ENV || 'development',
+  // App version, surfaced in the UI header/tab. Single source of truth is
+  // package.json — bump it there with each committed change.
+  version: require('./../package.json').version,
   databaseUrl: process.env.DATABASE_URL || null,
   jwtSecret: required('JWT_SECRET'),
   barcodeSecret: required('BARCODE_SECRET'),

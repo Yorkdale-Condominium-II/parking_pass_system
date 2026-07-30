@@ -5,7 +5,17 @@ A continuation guide for picking this project back up in a new session.
 - **Repo:** `Yorkdale-Condominium-II/parking_pass_system`
 - **Working branch:** `claude/condo-property-management-8f0seo`
 - **Latest commit at handoff:** `ae68cd9`
-- **Tests:** `npm test` → 32 integration cases, all passing (needs a Postgres test DB).
+- **Tests:** `npm test` → 34 integration cases, all passing (needs a Postgres test DB).
+
+---
+
+## Versioning
+
+`package.json`'s `version` is the single source of truth. `src/config.js` reads
+it, `GET /api/settings` returns it (public), and the SPA shows it as a `vX.Y.Z`
+badge in the top-bar header and in the browser tab title. **Bump `package.json`
+with every committed change** so the running build is identifiable at a glance
+(semver: patch for fixes, minor for features). Current: **1.1.0**.
 
 ---
 

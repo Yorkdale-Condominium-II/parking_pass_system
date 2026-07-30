@@ -7,6 +7,11 @@ body { margin: 0; font-family: "Helvetica Neue", Arial, sans-serif; color: var(-
 
 header { display: flex; align-items: center; gap: 20px; background: var(--ink); color: #fff; padding: 12px 20px; }
 header .brand { font-weight: 800; font-size: 18px; }
+header .brand .version {
+  font-weight: 600; font-size: 11px; vertical-align: middle;
+  opacity: 0.65; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  padding: 1px 6px; border: 1px solid currentColor; border-radius: 10px;
+}
 header nav { display: flex; gap: 6px; flex: 1; }
 header nav button { background: transparent; color: #cdd5df; border: 0; padding: 8px 12px; border-radius: 6px; cursor: pointer; font-size: 14px; }
 header nav button.active, header nav button:hover { background: rgba(255,255,255,.15); color: #fff; }
