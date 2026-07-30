@@ -1,6 +1,6 @@
 {
   "name": "parking_pass_system",
-  "version": "1.4.1",
+  "version": "1.5.0",
   "description": "All-in-one condominium property management platform for visitor parking, resident vehicle registration, and operational oversight.",
   "main": "src/server.js",
   "type": "commonjs",
@@ -9,6 +9,7 @@
     "dev": "node --watch src/server.js",
     "migrate": "node scripts/migrate.js",
     "seed": "node scripts/seed.js",
+    "recover": "node scripts/recover-admin.js",
     "test": "node --test \"test/**/*.test.js\""
   },
   "engines": {

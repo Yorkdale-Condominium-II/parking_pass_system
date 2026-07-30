@@ -910,3 +910,69 @@ test('admin: only a superuser can change another user\'s role or superuser flag'
   assert.equal(grant.status, 200);
   assert.equal(grant.body.is_superuser, true);
 });
+
+test('password reset by email: request is generic; token sets a new password', async () => {
+  const crypto = require('node:crypto');
+  const sha256 = (s) => crypto.createHash('sha256').update(s).digest('hex');
+  // Give manager1 an email so a reset can be issued.
+  await db.query(`UPDATE users SET email = 'boss@example.com' WHERE username = 'manager1'`);
+  const uid = (await db.query(`SELECT id FROM users WHERE username = 'manager1'`)).rows[0].id;
+
+  const anon = makeClient();
+
+  // A request for an unknown identifier still returns the same generic message
+  // (no account enumeration) and creates no reset row.
+  const unknown = await anon('POST', '/api/auth/forgot-password', { identifier: 'nobody@nowhere.com' });
+  assert.equal(unknown.status, 200);
+  assert.match(unknown.body.message, /reset link/i);
+  assert.equal((await db.query(`SELECT count(*)::int n FROM password_resets`)).rows[0].n, 0);
+
+  // A real, active account gets a reset row (the raw token is emailed, so the
+  // test can't read it — it's only stored hashed).
+  const req = await anon('POST', '/api/auth/forgot-password', { identifier: 'manager1' });
+  assert.equal(req.status, 200);
+  const rows = (await db.query(`SELECT token_hash, used_at FROM password_resets WHERE user_id = $1`, [uid])).rows;
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].used_at, null);
+
+  // Simulate clicking the emailed link: insert a known token and consume it.
+  const raw = 'test-reset-token-abc123';
+  await db.query(
+    `INSERT INTO password_resets (user_id, token_hash, expires_at)
+     VALUES ($1, $2, now() + interval '1 hour')`,
+    [uid, sha256(raw)]
+  );
+  const bad = await anon('POST', '/api/auth/reset-password', { token: 'wrong', newPassword: 'brandNew123' });
+  assert.equal(bad.status, 400);
+  assert.equal(bad.body.error, 'invalid_or_expired_token');
+
+  const ok = await anon('POST', '/api/auth/reset-password', { token: raw, newPassword: 'brandNew123' });
+  assert.equal(ok.status, 200);
+
+  // The token is single-use.
+  const reuse = await anon('POST', '/api/auth/reset-password', { token: raw, newPassword: 'another123' });
+  assert.equal(reuse.status, 400);
+
+  // The new password now works for login.
+  const login = await anon('POST', '/api/auth/login', { username: 'manager1', password: 'brandNew123' });
+  assert.equal(login.status, 200);
+
+  // Restore manager1's password so later shared-DB tests are unaffected.
+  await db.query(
+    `UPDATE users SET password_hash = $1 WHERE username = 'manager1'`,
+    [await password.hash('changeme123')]
+  );
+});
+
+test('password reset is refused for a disabled account', async () => {
+  // Deactivate board1 and confirm no reset link is issued (must use recovery).
+  await db.query(`UPDATE users SET email = 'b@example.com', is_active = FALSE WHERE username = 'board1'`);
+  const uid = (await db.query(`SELECT id FROM users WHERE username = 'board1'`)).rows[0].id;
+  const anon = makeClient();
+  const req = await anon('POST', '/api/auth/forgot-password', { identifier: 'board1' });
+  assert.equal(req.status, 200); // still generic
+  const n = (await db.query(`SELECT count(*)::int n FROM password_resets WHERE user_id = $1`, [uid])).rows[0].n;
+  assert.equal(n, 0);
+  // Re-activate so we don't leave the shared DB in a surprising state.
+  await db.query(`UPDATE users SET is_active = TRUE WHERE username = 'board1'`);
+});

@@ -346,3 +346,23 @@ UPDATE users SET is_superuser = TRUE
  WHERE role = 'management'
    AND NOT EXISTS (SELECT 1 FROM users WHERE is_superuser = TRUE);
 COMMIT;
+
+-- ============================================================================
+--  v11 migration — self-service password reset tokens. A "forgot password"
+--  request stores only the SHA-256 hash of a single-use token with a short
+--  expiry; the raw token is emailed to the user. Reset consumes the token and
+--  sets a new password. (Disabled accounts are never eligible — use the local
+--  recover-admin script for a lockout.)
+-- ============================================================================
+BEGIN;
+CREATE TABLE IF NOT EXISTS password_resets (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id     UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token_hash  TEXT        NOT NULL,             -- sha256(raw token), hex
+    expires_at  TIMESTAMPTZ NOT NULL,
+    used_at     TIMESTAMPTZ,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_pwreset_token ON password_resets(token_hash);
+CREATE INDEX IF NOT EXISTS idx_pwreset_user  ON password_resets(user_id);
+COMMIT;

@@ -15,7 +15,7 @@ A continuation guide for picking this project back up in a new session.
 it, `GET /api/settings` returns it (public), and the SPA shows it as a `vX.Y.Z`
 badge in the top-bar header and in the browser tab title. **Bump `package.json`
 with every committed change** so the running build is identifiable at a glance
-(semver: patch for fixes, minor for features). Current: **1.4.1**.
+(semver: patch for fixes, minor for features). Current: **1.5.0**.
 
 ---
 
@@ -60,6 +60,16 @@ Implemented and tested:
   change a user's role — their own on the **Account** screen, or others' in the
   Manager console (`is_superuser` toggle + role change gated to superusers).
   Bootstrap promotes existing Management accounts when no superuser exists yet.
+- **Self-service password reset by email** (`POST /api/auth/forgot-password` →
+  emailed link → `POST /api/auth/reset-password`, v11 `password_resets` table):
+  single-use SHA-256-hashed token, 60-min expiry, generic response (no account
+  enumeration). Login link on the SPA; the emailed URL is `/?reset=<token>`.
+  **Needs SMTP configured** (see §2) to actually send. Disabled accounts are
+  never eligible — a lockout is fixed locally with the recovery tool below.
+- **Emergency recovery** (locked out / account disabled / lost password): run
+  **`recover-admin.bat`** (or `npm run recover -- <username> <newPassword>`) on
+  the server PC. It re-enables the account, sets a temporary password, and
+  grants superuser so you can fix things in the UI. No login/email required.
 - **Self-service Account edit**: users edit their own username / name / email
   (and password); the role field is locked unless they're a superuser. The
   session token is re-issued on save so changes apply without re-login.

@@ -1,8 +1,11 @@
 'use strict';
+const crypto = require('crypto');
 const express = require('express');
 const rateLimit = require('express-rate-limit');
 const db = require('./../db');
+const config = require('./../config');
 const password = require('./../auth/password');
+const mailer = require('./../services/mailer');
 const { issueSession, requireAuth } = require('./../auth/middleware');
 
 const router = express.Router();
@@ -14,6 +17,18 @@ const loginLimiter = rateLimit({
   legacyHeaders: false,
   skip: () => process.env.NODE_ENV === 'test', // don't throttle the test suite
 });
+
+// A separate, tighter limiter for the public "forgot password" endpoint.
+const forgotLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test',
+});
+
+const RESET_TTL_MINUTES = 60;
+const sha256 = (s) => crypto.createHash('sha256').update(s).digest('hex');
 
 // Record a sign-in event. Never throws into the request path.
 async function logAuth({ userId, username, event, success, req }) {
@@ -81,6 +96,78 @@ router.post('/change-password', requireAuth, async (req, res) => {
   const token = issueSession({ ...user, must_reset_password: false });
   res.cookie('session', token, {
     httpOnly: true, sameSite: 'strict', secure: process.env.NODE_ENV === 'production', maxAge: 8 * 3600 * 1000,
+  });
+  res.json({ ok: true });
+});
+
+// --- Self-service password reset -------------------------------------------
+// Step 1: request a reset link. Accepts a username or email. Always responds
+// the same way whether or not a match exists, so the endpoint can't be used to
+// probe which usernames/emails are registered. Only ACTIVE accounts with an
+// email on file can actually receive a link; a disabled account must be
+// restored locally with recover-admin (a reset would be pointless — login
+// rejects inactive accounts).
+router.post('/forgot-password', forgotLimiter, async (req, res) => {
+  const identifier = String((req.body || {}).identifier || '').trim();
+  const generic = { ok: true, message: 'If that account exists, a reset link has been emailed.' };
+  if (!identifier) return res.status(400).json({ error: 'identifier_required' });
+
+  const r = await db.query(
+    `SELECT id, email, full_name FROM users
+      WHERE is_active = TRUE AND (lower(username) = lower($1) OR lower(email) = lower($1))
+      LIMIT 1`,
+    [identifier]
+  );
+  const user = r.rows[0];
+  if (user && user.email) {
+    const rawToken = crypto.randomBytes(32).toString('hex');
+    const expires = new Date(Date.now() + RESET_TTL_MINUTES * 60 * 1000);
+    // Invalidate any outstanding tokens for this user, then store the new hash.
+    await db.query(`UPDATE password_resets SET used_at = now() WHERE user_id = $1 AND used_at IS NULL`, [user.id]);
+    await db.query(
+      `INSERT INTO password_resets (user_id, token_hash, expires_at) VALUES ($1,$2,$3)`,
+      [user.id, sha256(rawToken), expires]
+    );
+    const link = `${config.oauthBaseUrl}/?reset=${rawToken}`;
+    const subject = 'Reset your parking management password';
+    const text = `Hello ${user.full_name},\n\n`
+      + `A password reset was requested for your account. Use the link below to set a new password. `
+      + `It expires in ${RESET_TTL_MINUTES} minutes.\n\n${link}\n\n`
+      + `If you didn't request this, you can ignore this email — your password won't change.`;
+    const html = `<p>Hello ${user.full_name},</p>`
+      + `<p>A password reset was requested for your account. Click the link below to set a new password. `
+      + `It expires in ${RESET_TTL_MINUTES} minutes.</p>`
+      + `<p><a href="${link}">Reset my password</a></p>`
+      + `<p>If you didn't request this, you can ignore this email — your password won't change.</p>`;
+    await mailer.sendMail({ to: user.email, subject, text, html });
+  }
+  // Always the same response, regardless of match/email/send outcome.
+  res.json(generic);
+});
+
+// Step 2: consume the token and set a new password.
+router.post('/reset-password', async (req, res) => {
+  const { token, newPassword } = req.body || {};
+  if (!token) return res.status(400).json({ error: 'token_required' });
+  if (!newPassword || newPassword.length < 8) return res.status(400).json({ error: 'password_too_short' });
+
+  const r = await db.query(
+    `SELECT pr.id, pr.user_id FROM password_resets pr
+       JOIN users u ON u.id = pr.user_id AND u.is_active = TRUE
+      WHERE pr.token_hash = $1 AND pr.used_at IS NULL AND pr.expires_at > now()
+      LIMIT 1`,
+    [sha256(String(token))]
+  );
+  const reset = r.rows[0];
+  if (!reset) return res.status(400).json({ error: 'invalid_or_expired_token' });
+
+  const hash = await password.hash(newPassword);
+  await db.withTransaction(async (client) => {
+    await client.query(
+      `UPDATE users SET password_hash = $1, must_reset_password = FALSE, updated_at = now() WHERE id = $2`,
+      [hash, reset.user_id]
+    );
+    await client.query(`UPDATE password_resets SET used_at = now() WHERE id = $1`, [reset.id]);
   });
   res.json({ ok: true });
 });

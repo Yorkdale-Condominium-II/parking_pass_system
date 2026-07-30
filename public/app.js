@@ -135,6 +135,47 @@ $('#loginForm').onsubmit = async (e) => {
 };
 $('#logoutBtn').onclick = async () => { try { await api('/auth/logout', { method: 'POST' }); } catch {} location.reload(); };
 
+// --- Forgot password (request an emailed reset link) ---
+$('#forgotLink').onclick = (e) => {
+  e.preventDefault();
+  const f = $('#forgotForm');
+  f.hidden = !f.hidden;
+  if (!f.hidden) f.identifier.focus();
+};
+$('#forgotForm').onsubmit = async (e) => {
+  e.preventDefault();
+  const identifier = new FormData(e.target).get('identifier');
+  try {
+    const r = await api('/auth/forgot-password', { method: 'POST', body: { identifier } });
+    $('#forgotMsg').textContent = r.message || 'If that account exists, a reset link has been emailed.';
+  } catch (err) {
+    $('#forgotMsg').textContent = err.message;
+  }
+};
+
+// --- Set a new password from an emailed reset token (?reset=…) ---
+function startTokenReset(token) {
+  document.querySelectorAll('.view').forEach((v) => (v.hidden = true));
+  $('#topbar').hidden = true;
+  $('#view-reset-token').hidden = false;
+  $('#resetTokenForm').onsubmit = async (e) => {
+    e.preventDefault();
+    const newPassword = new FormData(e.target).get('newPassword');
+    $('#resetTokenError').textContent = '';
+    try {
+      await api('/auth/reset-password', { method: 'POST', body: { token, newPassword } });
+      $('#resetTokenMsg').textContent = 'Password updated. You can now sign in.';
+      // Drop the token from the URL and return to the login screen shortly.
+      history.replaceState({}, '', location.pathname);
+      setTimeout(() => location.replace(location.pathname), 1500);
+    } catch (err) {
+      $('#resetTokenError').textContent = err.data?.error === 'invalid_or_expired_token'
+        ? 'This reset link is invalid or has expired. Please request a new one.'
+        : (err.data?.error === 'password_too_short' ? 'Password must be at least 8 characters.' : err.message);
+    }
+  };
+}
+
 // SSO buttons + callback error messages on the login screen.
 const SSO_ERRORS = {
   not_provisioned: 'That account isn’t set up here yet. Ask a manager to add your email.',
@@ -758,6 +799,12 @@ async function loadBoard() {
 (async () => {
   // Load public settings first so the version/org show even before login.
   await loadSettings();
+  // An emailed reset link (?reset=<token>) takes priority over everything else.
+  const resetToken = new URLSearchParams(location.search).get('reset');
+  if (resetToken) {
+    startTokenReset(resetToken);
+    return;
+  }
   try {
     const { user } = await api('/auth/me');
     await enterApp(user);
