@@ -15,7 +15,7 @@ A continuation guide for picking this project back up in a new session.
 it, `GET /api/settings` returns it (public), and the SPA shows it as a `vX.Y.Z`
 badge in the top-bar header and in the browser tab title. **Bump `package.json`
 with every committed change** so the running build is identifiable at a glance
-(semver: patch for fixes, minor for features). Current: **1.5.1**.
+(semver: patch for fixes, minor for features). Current: **1.6.0**.
 
 ---
 
@@ -76,7 +76,10 @@ Implemented and tested:
 - **Nav grouping**: the top bar groups **Yorkdale Manager** + **Account** under
   a "System Management" label.
 - **Yorkdale Manager** console: settings (company/condo name), manage users
-  (create/activate/deactivate/reset pw/history), pass + sign-in audit logs,
+  (create/activate/deactivate/reset pw/history/**delete**), pass + sign-in audit
+  logs, — *delete* is superuser-only, needs a typed "Delete" confirmation, blocks
+  self-deletion, and returns 409 for accounts with activity history (FK-protected;
+  disable them instead),
   weekly override code, data export (CSV/XLSX/PDF), year-end archive & clear,
   clear-all-logs.
 - Board dashboard: aggregates only (no PII).

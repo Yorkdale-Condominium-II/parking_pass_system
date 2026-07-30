@@ -424,6 +424,7 @@ async function loadUsers() {
         <button type="button" data-uact="email" data-id="${u.id}" data-email="${u.email || ''}">Set email</button>
         <button type="button" data-uact="toggle" data-id="${u.id}" data-active="${u.is_active}">${u.is_active ? 'Disable' : 'Enable'}</button>
         <button type="button" data-uact="resetpw" data-id="${u.id}">Reset pw</button>
+        <button type="button" class="danger" data-uact="delete" data-id="${u.id}" data-name="${u.first_name || ''} ${u.last_name || ''}">Delete</button>
       </td></tr>`).join('') + `</table>`;
 }
 $('#usersTable').addEventListener('click', async (e) => {
@@ -452,6 +453,23 @@ $('#usersTable').addEventListener('click', async (e) => {
         <table><tr><th>Time</th><th>Action</th><th>Unit</th><th>Plate</th></tr>` +
         h.events.map((ev) => `<tr><td>${new Date(ev.created_at).toLocaleString()}</td><td>${ev.action}</td><td>${ev.unit_number || '—'}</td><td>${ev.visitor_plate || '—'}</td></tr>`).join('') +
         `</table></div>`;
+    } else if (btn.dataset.uact === 'delete') {
+      const name = (btn.dataset.name || '').trim() || 'this user';
+      const typed = prompt(`Permanently delete ${name}'s account? This cannot be undone.\n\nType Delete to confirm:`);
+      if (typed === null) return; // cancelled
+      if (typed !== 'Delete') { alert('Not deleted — you must type Delete exactly.'); return; }
+      try {
+        await api(`/admin/users/${id}`, { method: 'DELETE' });
+        loadUsers();
+      } catch (err) {
+        const map = {
+          user_has_history: 'This account has activity history (issued passes, audit records) and can’t be deleted. Disable it instead.',
+          cannot_delete_self: 'You can’t delete your own account.',
+          superuser_required: 'Only a superuser can delete accounts.',
+        };
+        alert(map[err.data?.error] || err.message);
+      }
+      return;
     }
   } catch (err) { alert(err.message); }
 });

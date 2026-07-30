@@ -918,6 +918,54 @@ test('admin: only a superuser can change another user\'s role or superuser flag'
   assert.equal(grant.body.is_superuser, true);
 });
 
+test('manage users: delete removes a clean account but protects one with history', async () => {
+  const sup = makeClient();
+  await sup('POST', '/api/auth/login', { username: 'manager1', password: 'changeme123' });
+
+  // A freshly-created account with no activity can be deleted.
+  const created = await sup('POST', '/api/admin/users', {
+    username: 'temp_delete', firstName: 'Temp', lastName: 'Delete', role: 'security', password: 'pw12345678',
+  });
+  assert.equal(created.status, 201);
+  const del = await sup('DELETE', `/api/admin/users/${created.body.id}`);
+  assert.equal(del.status, 200);
+  assert.equal(del.body.deleted, 'temp_delete');
+  const list = await sup('GET', '/api/admin/users');
+  assert.ok(!list.body.some((u) => u.username === 'temp_delete'));
+
+  // You cannot delete your own account.
+  const me = list.body.find((u) => u.username === 'manager1');
+  const self = await sup('DELETE', `/api/admin/users/${me.id}`);
+  assert.equal(self.status, 400);
+  assert.equal(self.body.error, 'cannot_delete_self');
+
+  // An account with activity history is protected by foreign keys. Create one
+  // and give it an audit entry so the check is deterministic regardless of what
+  // earlier tests cleared.
+  const pw = await password.hash('changeme123');
+  const hist = await db.query(
+    `INSERT INTO users (username, full_name, role, password_hash) VALUES ('hist_user','Hist User','security',$1) RETURNING id`,
+    [pw]
+  );
+  await db.query(`INSERT INTO pass_audit_log (action, actor_id) VALUES ('issued', $1)`, [hist.rows[0].id]);
+  const protectedDel = await sup('DELETE', `/api/admin/users/${hist.rows[0].id}`);
+  assert.equal(protectedDel.status, 409);
+  assert.equal(protectedDel.body.error, 'user_has_history');
+
+  // A non-superuser manager cannot delete accounts at all.
+  await db.query(
+    `INSERT INTO users (username, full_name, role, password_hash, is_superuser)
+     VALUES ('plainmgr','Plain Mgr','management',$1,FALSE)
+     ON CONFLICT (username) DO UPDATE SET is_superuser = FALSE`,
+    [pw]
+  );
+  const plain = makeClient();
+  await plain('POST', '/api/auth/login', { username: 'plainmgr', password: 'changeme123' });
+  const forbidden = await plain('DELETE', `/api/admin/users/${hist.rows[0].id}`);
+  assert.equal(forbidden.status, 403);
+  assert.equal(forbidden.body.error, 'superuser_required');
+});
+
 test('password reset by email: request is generic; token sets a new password', async () => {
   const crypto = require('node:crypto');
   const sha256 = (s) => crypto.createHash('sha256').update(s).digest('hex');

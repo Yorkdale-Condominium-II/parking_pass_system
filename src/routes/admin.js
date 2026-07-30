@@ -116,6 +116,24 @@ router.post('/users/:id/reset-password', async (req, res) => {
   res.json({ ok: true });
 });
 
+// Permanently delete a user account. Destructive, so it's superuser-only and
+// you can't delete your own account. Accounts that have activity history
+// (issued passes, audit entries, overrides) are protected by foreign keys —
+// those return 409 so the operator disables them instead of losing the trail.
+router.delete('/users/:id', async (req, res) => {
+  const me = await db.query(`SELECT is_superuser FROM users WHERE id = $1`, [req.user.id]);
+  if (!me.rows[0]?.is_superuser) return res.status(403).json({ error: 'superuser_required' });
+  if (req.params.id === req.user.id) return res.status(400).json({ error: 'cannot_delete_self' });
+  try {
+    const r = await db.query(`DELETE FROM users WHERE id = $1 RETURNING username`, [req.params.id]);
+    if (r.rowCount === 0) return res.status(404).json({ error: 'user_not_found' });
+    res.json({ ok: true, deleted: r.rows[0].username });
+  } catch (err) {
+    if (err.code === '23503') return res.status(409).json({ error: 'user_has_history' });
+    throw err;
+  }
+});
+
 // Per-user activity history: passes issued and cancelled, plus request decisions.
 router.get('/users/:id/history', async (req, res) => {
   const limit = Math.min(parseInt(req.query.limit || '200', 10), 500);
