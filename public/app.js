@@ -417,10 +417,11 @@ async function loadUsers() {
       <td>${u.first_name || ''} ${u.last_name || ''}</td>
       <td>${u.username}</td>
       <td>${u.email || '—'}</td>
-      <td>${u.role}</td>
+      <td>${ROLE_LABELS[u.role] || u.role}</td>
       <td>${u.is_active ? 'Active' : '<span style="color:#b3261e">Disabled</span>'}</td>
       <td>
         <button type="button" data-uact="history" data-id="${u.id}" data-name="${u.first_name} ${u.last_name}">History</button>
+        <button type="button" data-uact="rename" data-id="${u.id}" data-name="${((u.first_name || '') + ' ' + (u.last_name || '')).trim()}">Set name</button>
         <button type="button" data-uact="email" data-id="${u.id}" data-email="${u.email || ''}">Set email</button>
         <button type="button" data-uact="toggle" data-id="${u.id}" data-active="${u.is_active}">${u.is_active ? 'Disable' : 'Enable'}</button>
         <button type="button" data-uact="resetpw" data-id="${u.id}">Reset pw</button>
@@ -439,6 +440,17 @@ $('#usersTable').addEventListener('click', async (e) => {
       if (!pw) return;
       await api(`/admin/users/${id}/reset-password`, { method: 'POST', body: { password: pw } });
       alert('Password reset.');
+    } else if (btn.dataset.uact === 'rename') {
+      const name = prompt('Full name for this account:', btn.dataset.name);
+      if (name === null) return;
+      const trimmed = name.trim();
+      if (!trimmed) { alert('Name cannot be empty.'); return; }
+      // First word is the first name; the rest is the last name.
+      const sp = trimmed.indexOf(' ');
+      const firstName = sp === -1 ? trimmed : trimmed.slice(0, sp);
+      const lastName = sp === -1 ? '' : trimmed.slice(sp + 1).trim();
+      await api(`/admin/users/${id}`, { method: 'PATCH', body: { firstName, lastName } });
+      loadUsers();
     } else if (btn.dataset.uact === 'email') {
       const email = prompt('Email for Google/Microsoft sign-in (blank to clear):', btn.dataset.email);
       if (email === null) return;
@@ -558,13 +570,13 @@ $('#refreshAudit').onclick = loadAudit;
 async function loadAudit() {
   const rows = await api('/admin/audit?limit=100');
   $('#auditTable').innerHTML = `<table><tr><th>Time</th><th>Action</th><th>Actor</th><th>Unit</th><th>Plate</th></tr>` +
-    rows.map((r) => `<tr><td>${new Date(r.created_at).toLocaleString()}</td><td>${r.action}</td><td>${r.actor_name || '—'} ${r.actor_role ? '(' + r.actor_role + ')' : ''}</td><td>${r.unit_number || '—'}</td><td>${r.visitor_plate || '—'}</td></tr>`).join('') + `</table>`;
+    rows.map((r) => `<tr><td>${new Date(r.created_at).toLocaleString()}</td><td>${r.action}</td><td>${r.actor_name || '—'} ${r.actor_role ? '(' + (ROLE_LABELS[r.actor_role] || r.actor_role) + ')' : ''}</td><td>${r.unit_number || '—'}</td><td>${r.visitor_plate || '—'}</td></tr>`).join('') + `</table>`;
 }
 $('#refreshAuthAudit').onclick = loadAuthAudit;
 async function loadAuthAudit() {
   const rows = await api('/admin/auth-audit?limit=100');
   $('#authAuditTable').innerHTML = `<table><tr><th>Time</th><th>Event</th><th>User</th><th>IP</th></tr>` +
-    rows.map((r) => `<tr><td>${new Date(r.created_at).toLocaleString()}</td><td><span class="badge ${r.success ? 'VALID' : 'REVOKED'}">${r.event}</span></td><td>${r.actor_name || r.username} ${r.actor_role ? '(' + r.actor_role + ')' : ''}</td><td>${r.ip || '—'}</td></tr>`).join('') + `</table>`;
+    rows.map((r) => `<tr><td>${new Date(r.created_at).toLocaleString()}</td><td><span class="badge ${r.success ? 'VALID' : 'REVOKED'}">${r.event}</span></td><td>${r.actor_name || r.username} ${r.actor_role ? '(' + (ROLE_LABELS[r.actor_role] || r.actor_role) + ')' : ''}</td><td>${r.ip || '—'}</td></tr>`).join('') + `</table>`;
 }
 
 // --- Resident requests (staff review) ---

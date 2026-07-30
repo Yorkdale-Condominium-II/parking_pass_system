@@ -7,7 +7,7 @@ const password = require('../src/auth/password');
   const pw = await password.hash('changeme123');
   const users = [
     ['security1', 'Sam', 'Security', 'security'],
-    ['manager1', 'Morgan', 'Manager', 'management'],
+    ['manager1', 'Yorkdale', 'Property Manager', 'management'],
     ['board1', 'Blair', 'Board', 'board'],
   ];
   for (const [username, first, last, role] of users) {
