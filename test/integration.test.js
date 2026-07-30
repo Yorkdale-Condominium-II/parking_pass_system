@@ -995,6 +995,22 @@ test('manage users: delete removes a clean account but protects one with history
   assert.equal(forbidden.body.error, 'superuser_required');
 });
 
+test('shutdown endpoint is management-only (and a no-op under test)', async () => {
+  // Non-management is refused.
+  const sec = makeClient();
+  await sec('POST', '/api/auth/login', { username: 'security1', password: 'changeme123' });
+  const denied = await sec('POST', '/api/admin/shutdown');
+  assert.equal(denied.status, 403);
+
+  // Management gets an OK (process.exit is skipped in NODE_ENV=test, so the
+  // suite keeps running).
+  const mgr = makeClient();
+  await mgr('POST', '/api/auth/login', { username: 'manager1', password: 'changeme123' });
+  const ok = await mgr('POST', '/api/admin/shutdown');
+  assert.equal(ok.status, 200);
+  assert.equal(ok.body.ok, true);
+});
+
 test('password reset by email: request is generic; token sets a new password', async () => {
   const crypto = require('node:crypto');
   const sha256 = (s) => crypto.createHash('sha256').update(s).digest('hex');

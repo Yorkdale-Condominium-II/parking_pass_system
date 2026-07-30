@@ -595,4 +595,17 @@ router.get('/export', async (req, res) => {
   return res.status(400).json({ error: 'unknown_format' });
 });
 
+// --- Shut down the server --------------------------------------------------
+// Stops the whole application (the hidden background process launched by
+// start.bat). The operator restarts it by running start.bat again. Guarded to
+// management (this router) and skipped under test so the suite can't kill itself.
+router.post('/shutdown', async (req, res) => {
+  res.json({ ok: true, message: 'The server is shutting down.' });
+  if (process.env.NODE_ENV !== 'test') {
+    // eslint-disable-next-line no-console
+    console.log(`[shutdown] requested by ${req.user.username} (${req.user.role})`);
+    setTimeout(() => process.exit(0), 300); // give the response time to flush
+  }
+});
+
 module.exports = router;

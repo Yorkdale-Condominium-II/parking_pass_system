@@ -109,6 +109,8 @@ async function enterApp(user) {
     return;
   }
   await loadRegions();
+  // Only management can stop the server.
+  $('#shutdownBtn').hidden = currentUser.role !== 'management';
   renderNav();
 }
 
@@ -134,6 +136,17 @@ $('#loginForm').onsubmit = async (e) => {
   } catch { $('#loginError').textContent = 'Invalid credentials'; }
 };
 $('#logoutBtn').onclick = async () => { try { await api('/auth/logout', { method: 'POST' }); } catch {} location.reload(); };
+
+// Shut down the whole application (stops the background server). Restart with start.bat.
+$('#shutdownBtn').onclick = async () => {
+  if (!confirm('Shut down the parking system?\n\nThe server will stop and everyone will be disconnected until it is started again with start.bat.')) return;
+  try { await api('/admin/shutdown', { method: 'POST' }); } catch {} // the server exits, so a network error here is expected
+  document.body.innerHTML = '<div style="font-family:system-ui,sans-serif;max-width:520px;margin:80px auto;padding:24px;text-align:center">'
+    + '<h1 style="font-size:22px">The parking system has been shut down.</h1>'
+    + '<p style="color:#555">You can close this tab. To start it again, run <b>start.bat</b> on the office PC.</p></div>';
+  // Try to close the tab (works when the browser allows it); otherwise the message above remains.
+  window.close();
+};
 
 // --- Forgot password (request an emailed reset link) ---
 $('#forgotLink').onclick = (e) => {
