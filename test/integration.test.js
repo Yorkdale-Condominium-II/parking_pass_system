@@ -422,10 +422,11 @@ test('management admin can create a user and read the audit log', async () => {
   await mgr('POST', '/api/auth/login', { username: 'manager1', password: 'changeme123' });
 
   const created = await mgr('POST', '/api/admin/users', {
-    username: 'security2', fullName: 'Sky Security', role: 'security', password: 'pw12345678',
+    username: 'security2', firstName: 'Sky', lastName: 'Security', role: 'security', password: 'pw12345678',
   });
   assert.equal(created.status, 201);
   assert.equal(created.body.role, 'security');
+  assert.equal(created.body.full_name, 'Sky Security');
 
   // Issue a pass so the audit log has an 'issued' entry to read back.
   await mgr('POST', '/api/passes', { unitNumber: '1204', visitorPlate: 'AUD1' });
@@ -547,6 +548,86 @@ test('year-end status reports prior-year data and clear purges it', async () => 
 
   const after = await mgr('GET', '/api/admin/year-end/status');
   assert.equal(after.body.hasPriorData, false);
+});
+
+test('desk kiosk issues a pass only with a valid officer password', async () => {
+  const anon = makeClient(); // public — no session
+
+  const officers = await anon('GET', '/api/desk/officers');
+  assert.ok(officers.body.some((o) => o.username === 'security1'));
+
+  const bad = await anon('POST', '/api/desk/issue', {
+    officerUsername: 'security1', officerPassword: 'WRONG',
+    unitNumber: '1204', visitorPlate: 'DESK1',
+  });
+  assert.equal(bad.status, 401);
+
+  const ok = await anon('POST', '/api/desk/issue', {
+    officerUsername: 'security1', officerPassword: 'changeme123',
+    unitNumber: '1204', visitorPlate: 'desk-1', visitorFirstName: 'Des', visitorLastName: 'Kie',
+  });
+  assert.equal(ok.status, 201);
+  assert.equal(ok.body.visitorPlate, 'DESK1');
+  assert.equal(ok.body.issuedBy, 'Sam Security');
+
+  // The desk print link works without a session (short-code gated).
+  const print = await anon('GET', ok.body.printUrl);
+  assert.equal(print.status, 200);
+  assert.ok(print.text.includes('VISITOR PARKING PASS'));
+});
+
+test('manage users: update, deactivate, reset password, history', async () => {
+  const mgr = makeClient();
+  await mgr('POST', '/api/auth/login', { username: 'manager1', password: 'changeme123' });
+
+  const created = await mgr('POST', '/api/admin/users', {
+    username: 'guard9', firstName: 'Gwen', lastName: 'Guard', role: 'security', password: 'initialpw1',
+  });
+  const id = created.body.id;
+
+  // Rename + role stays; full_name re-derives.
+  const patched = await mgr('PATCH', `/api/admin/users/${id}`, { lastName: 'Guardian' });
+  assert.equal(patched.body.full_name, 'Gwen Guardian');
+
+  // Deactivate → that user can no longer log in.
+  await mgr('PATCH', `/api/admin/users/${id}`, { isActive: false });
+  const gate = makeClient();
+  const denied = await gate('POST', '/api/auth/login', { username: 'guard9', password: 'initialpw1' });
+  assert.equal(denied.status, 401);
+
+  // Reset password (and reactivate) → can log in with the new one.
+  await mgr('PATCH', `/api/admin/users/${id}`, { isActive: true });
+  await mgr('POST', `/api/admin/users/${id}/reset-password`, { password: 'newpass123' });
+  const ok = await gate('POST', '/api/auth/login', { username: 'guard9', password: 'newpass123' });
+  assert.equal(ok.status, 200);
+
+  // History: guard9 issues then cancels a pass; summary reflects it.
+  const iss = await gate('POST', '/api/passes', { unitNumber: '1204', visitorPlate: 'HIST1' });
+  await gate('POST', `/api/passes/${iss.body.passId}/revoke`, {});
+  const hist = await mgr('GET', `/api/admin/users/${id}/history`);
+  assert.equal(hist.body.summary.issued, 1);
+  assert.equal(hist.body.summary.cancelled, 1);
+});
+
+test('clear-logs wipes audit history but keeps live passes', async () => {
+  const mgr = makeClient();
+  await mgr('POST', '/api/auth/login', { username: 'manager1', password: 'changeme123' });
+  // One live pass (kept) and some audit noise (cleared).
+  const live = await mgr('POST', '/api/passes', { unitNumber: '1204', visitorPlate: 'LIVEKEEP' });
+
+  const noConfirm = await mgr('POST', '/api/admin/clear-logs', {});
+  assert.equal(noConfirm.status, 400);
+
+  const cleared = await mgr('POST', '/api/admin/clear-logs', { confirm: true });
+  assert.equal(cleared.status, 200);
+
+  // Audit log is emptied except the 'logs_cleared' marker itself.
+  const audit = await mgr('GET', '/api/admin/audit');
+  assert.ok(audit.body.every((r) => r.action === 'logs_cleared'));
+
+  // The live pass still verifies.
+  const v = await mgr('POST', '/api/verify', { token: live.body.token });
+  assert.equal(v.body.verdict, 'VALID');
 });
 
 test('the print sheet is Letter-sized and embeds a signed QR', async () => {

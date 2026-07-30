@@ -27,19 +27,20 @@ router.use(requireAuth, requireRole('management'));
 
 // --- User account creation -------------------------------------------------
 router.post('/users', async (req, res) => {
-  const { username, fullName, role, password: pw } = req.body || {};
-  if (!username || !fullName || !role || !pw) {
+  const { username, firstName, lastName, role, password: pw } = req.body || {};
+  if (!username || !firstName || !lastName || !role || !pw) {
     return res.status(400).json({ error: 'missing_fields' });
   }
   if (!['security', 'management', 'board'].includes(role)) {
     return res.status(400).json({ error: 'invalid_role' });
   }
+  const fullName = `${firstName.trim()} ${lastName.trim()}`;
   const hash = await password.hash(pw);
   try {
     const r = await db.query(
-      `INSERT INTO users (username, full_name, role, password_hash)
-       VALUES ($1,$2,$3,$4) RETURNING id, username, full_name, role`,
-      [username, fullName, role, hash]
+      `INSERT INTO users (username, first_name, last_name, full_name, role, password_hash)
+       VALUES ($1,$2,$3,$4,$5,$6) RETURNING id, username, first_name, last_name, full_name, role`,
+      [username, firstName.trim(), lastName.trim(), fullName, role, hash]
     );
     res.status(201).json(r.rows[0]);
   } catch (err) {
@@ -50,10 +51,77 @@ router.post('/users', async (req, res) => {
 
 router.get('/users', async (req, res) => {
   const r = await db.query(
-    `SELECT id, username, full_name, role, is_active, created_at
-       FROM users ORDER BY created_at DESC`
+    `SELECT id, username, first_name, last_name, full_name, role, is_active, created_at
+       FROM users ORDER BY role, full_name`
   );
   res.json(r.rows);
+});
+
+// Update a user: names, role, or active state.
+router.patch('/users/:id', async (req, res) => {
+  const { firstName, lastName, role, isActive } = req.body || {};
+  if (role && !['security', 'management', 'board'].includes(role)) {
+    return res.status(400).json({ error: 'invalid_role' });
+  }
+  const sets = [];
+  const params = [];
+  const add = (col, val) => { params.push(val); sets.push(`${col} = $${params.length}`); };
+  if (firstName !== undefined) add('first_name', firstName.trim());
+  if (lastName !== undefined) add('last_name', lastName.trim());
+  if (role !== undefined) add('role', role);
+  if (typeof isActive === 'boolean') add('is_active', isActive);
+  if (!sets.length) return res.status(400).json({ error: 'nothing_to_update' });
+  params.push(req.params.id);
+  const r = await db.query(
+    `UPDATE users SET ${sets.join(', ')}, updated_at = now() WHERE id = $${params.length} RETURNING id`,
+    params
+  );
+  if (r.rowCount === 0) return res.status(404).json({ error: 'user_not_found' });
+  // Keep full_name derived from first/last.
+  const out = await db.query(
+    `UPDATE users SET full_name = trim(concat_ws(' ', first_name, last_name)) WHERE id = $1
+      RETURNING id, username, first_name, last_name, full_name, role, is_active`,
+    [req.params.id]
+  );
+  res.json(out.rows[0]);
+});
+
+// Reset a user's password.
+router.post('/users/:id/reset-password', async (req, res) => {
+  const { password: pw } = req.body || {};
+  if (!pw || pw.length < 8) return res.status(400).json({ error: 'password_too_short' });
+  const hash = await password.hash(pw);
+  const r = await db.query(
+    `UPDATE users SET password_hash = $1, updated_at = now() WHERE id = $2 RETURNING id`,
+    [hash, req.params.id]
+  );
+  if (r.rowCount === 0) return res.status(404).json({ error: 'user_not_found' });
+  res.json({ ok: true });
+});
+
+// Per-user activity history: passes issued and cancelled, plus request decisions.
+router.get('/users/:id/history', async (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit || '200', 10), 500);
+  const r = await db.query(
+    `SELECT al.created_at, al.action, al.detail, un.unit_number, vp.visitor_plate
+       FROM pass_audit_log al
+       LEFT JOIN visitor_passes vp ON vp.id = al.pass_id
+       LEFT JOIN units un ON un.id = vp.unit_id
+      WHERE al.actor_id = $1
+      ORDER BY al.created_at DESC
+      LIMIT $2`,
+    [req.params.id, limit]
+  );
+  const summary = await db.query(
+    `SELECT
+        COUNT(*) FILTER (WHERE action IN ('issued','override_used'))::int AS issued,
+        COUNT(*) FILTER (WHERE action = 'revoked')::int                   AS cancelled,
+        COUNT(*) FILTER (WHERE action = 'vacated')::int                   AS vacated,
+        COUNT(*) FILTER (WHERE action = 'verified')::int                  AS verified
+       FROM pass_audit_log WHERE actor_id = $1`,
+    [req.params.id]
+  );
+  res.json({ summary: summary.rows[0], events: r.rows });
 });
 
 // --- Units & unit mapping --------------------------------------------------
@@ -209,6 +277,36 @@ router.post('/year-end/clear', async (req, res) => {
         pass_audit: a.rowCount, auth_audit: b.rowCount, requests: c.rowCount, passes: d.rowCount } }]
     );
     return { passes: d.rowCount, requests: c.rowCount, pass_audit: a.rowCount, auth_audit: b.rowCount };
+  });
+  res.json({ ok: true, deleted });
+});
+
+// --- Clear all logs (full archive & clear) ---------------------------------
+// Deletes ALL audit logs plus completed/historical passes and decided requests.
+// Currently-live and future-scheduled passes and still-pending requests are
+// kept so day-to-day operations aren't disrupted. Export first — this is
+// irreversible.
+router.post('/clear-logs', async (req, res) => {
+  if (!req.body || req.body.confirm !== true) {
+    return res.status(400).json({ error: 'confirmation_required' });
+  }
+  const deleted = await db.withTransaction(async (client) => {
+    // Historical passes = revoked, vacated, or already expired (not live/scheduled).
+    const passes = await client.query(
+      `DELETE FROM visitor_passes
+        WHERE status = 'revoked' OR vacated_at IS NOT NULL OR expires_at <= now()`
+    );
+    const requests = await client.query(`DELETE FROM pass_requests WHERE status <> 'pending'`);
+    const passAudit = await client.query(`DELETE FROM pass_audit_log`);
+    const authAudit = await client.query(`DELETE FROM auth_audit_log`);
+    await client.query(
+      `INSERT INTO pass_audit_log (action, actor_id, detail) VALUES ('logs_cleared',$1,$2)`,
+      [req.user.id, { deleted: {
+        passes: passes.rowCount, requests: requests.rowCount,
+        pass_audit: passAudit.rowCount, auth_audit: authAudit.rowCount } }]
+    );
+    return { passes: passes.rowCount, requests: requests.rowCount,
+             pass_audit: passAudit.rowCount, auth_audit: authAudit.rowCount };
   });
   res.json({ ok: true, deleted });
 });

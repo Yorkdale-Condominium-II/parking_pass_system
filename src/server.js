@@ -31,6 +31,7 @@ app.use('/api/board', require('./routes/board'));
 app.use('/api/resident', require('./routes/resident')); // public request form
 app.use('/api/requests', require('./routes/requests'));  // staff review
 app.use('/api/spots', require('./routes/spots'));         // live occupancy board
+app.use('/api/desk', require('./routes/desk'));           // public officer-authenticated kiosk
 
 app.get('/api/health', (req, res) => res.json({ ok: true, time: new Date().toISOString() }));
 

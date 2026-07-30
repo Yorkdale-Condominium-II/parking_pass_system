@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Yorkdale Condominium II — Visitor Pass Desk</title>
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<header id="topbar">
+  <div class="brand">🅿️ Yorkdale Condominium II</div>
+  <div class="who"><span>Visitor Pass Desk</span> · <a href="/" style="color:#cdd5df">Staff login</a></div>
+</header>
+
+<main id="app">
+  <section class="view">
+    <h1>Issue a Visitor Pass</h1>
+    <p class="hint">Enter the visit details, choose the officer issuing the pass, and confirm with their password.</p>
+
+    <form id="deskForm" class="card">
+      <label>Unit number
+        <input name="unitNumber" list="unitList" autocomplete="off" required placeholder="Start typing a unit…">
+        <datalist id="unitList"></datalist>
+      </label>
+      <small class="hint" id="unitHint"></small>
+
+      <div class="cols">
+        <label>Visitor first name <input name="visitorFirstName"></label>
+        <label>Visitor last name <input name="visitorLastName"></label>
+      </div>
+      <div class="cols">
+        <label>Plate country
+          <select name="visitorCountry" id="visitorCountry">
+            <option value="CA">Canada</option><option value="US">United States</option>
+          </select>
+        </label>
+        <label>Province / State <select name="visitorRegion" id="visitorRegion"></select></label>
+      </div>
+      <label>Visitor plate <input name="visitorPlate" required></label>
+
+      <label>Duration</label>
+      <div class="btn-row" id="durationRow">
+        <button type="button" class="dur active" data-preset="today">Rest of today (until midnight)</button>
+        <button type="button" class="dur" data-preset="tomorrow_noon">Until noon tomorrow</button>
+      </div>
+      <input type="hidden" name="durationPreset" id="durationPreset" value="today">
+      <label>Schedule for later (optional) <input type="datetime-local" name="startsAt"></label>
+
+      <hr>
+      <h2>Authorize</h2>
+      <div class="cols">
+        <label>Issuing officer
+          <select name="officerUsername" id="officerSelect" required></select>
+        </label>
+        <label>Officer password <input name="officerPassword" type="password" required autocomplete="off"></label>
+      </div>
+
+      <button type="submit">Issue pass</button>
+      <p class="error" id="deskError"></p>
+    </form>
+
+    <div id="deskResult"></div>
+  </section>
+</main>
+
+<script src="/desk.js"></script>
+</body>
+</html>

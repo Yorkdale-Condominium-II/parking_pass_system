@@ -6,15 +6,15 @@ const password = require('../src/auth/password');
 (async () => {
   const pw = await password.hash('changeme123');
   const users = [
-    ['security1', 'Sam Security', 'security'],
-    ['manager1', 'Morgan Manager', 'management'],
-    ['board1', 'Blair Board', 'board'],
+    ['security1', 'Sam', 'Security', 'security'],
+    ['manager1', 'Morgan', 'Manager', 'management'],
+    ['board1', 'Blair', 'Board', 'board'],
   ];
-  for (const [username, name, role] of users) {
+  for (const [username, first, last, role] of users) {
     await db.query(
-      `INSERT INTO users (username, full_name, role, password_hash)
-       VALUES ($1,$2,$3,$4) ON CONFLICT (username) DO NOTHING`,
-      [username, name, role, pw]
+      `INSERT INTO users (username, first_name, last_name, full_name, role, password_hash)
+       VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (username) DO NOTHING`,
+      [username, first, last, `${first} ${last}`, role, pw]
     );
   }
 

@@ -25,6 +25,7 @@
     </form>
     <p class="hint">Seeded demo logins — security1 / manager1 / board1 (password: changeme123)</p>
     <p class="hint">Are you a resident? <a href="/resident.html">Request a visitor pass →</a></p>
+    <p class="hint">At the desk? <a href="/desk.html">Open the visitor pass desk →</a></p>
   </section>
 
   <!-- Security / Management: Lookup -->
@@ -149,13 +150,16 @@
 
   <!-- Management: Admin -->
   <section id="view-admin" class="view" hidden>
-    <h1>Management Console</h1>
+    <h1>Yorkdale Manager</h1>
     <div id="yearEndBanner" class="banner" hidden></div>
     <div class="cols">
       <form id="userForm" class="card">
         <h2>Create user</h2>
         <label>Username <input name="username" required></label>
-        <label>Full name <input name="fullName" required></label>
+        <div class="cols">
+          <label>First name <input name="firstName" required></label>
+          <label>Last name <input name="lastName" required></label>
+        </div>
         <label>Role
           <select name="role"><option value="security">Security</option><option value="management">Management</option><option value="board">Board</option></select>
         </label>
@@ -179,6 +183,13 @@
       </form>
     </div>
 
+    <div class="card" id="manageUsersCard">
+      <h2>Manage users</h2>
+      <button type="button" id="refreshUsers">Refresh</button>
+      <div id="usersTable"></div>
+      <div id="userHistory"></div>
+    </div>
+
     <div class="card" id="exportCard">
       <h2>Download data</h2>
       <p class="hint">CSV and Excel files open directly in Excel and Google Sheets (File → Import).</p>
@@ -196,6 +207,13 @@
     <div class="card" id="yearEndCard">
       <h2>Year-end archive</h2>
       <div id="yearEndBox">…</div>
+    </div>
+
+    <div class="card" id="clearLogsCard">
+      <h2>Clear all logs</h2>
+      <p class="hint">⚠ Deletes all audit logs and completed/historical passes and requests (live and scheduled passes, and pending requests, are kept). This erases the per-user history. Download your data first — this cannot be undone.</p>
+      <button type="button" id="clearLogsBtn" class="danger">Clear all logs now</button>
+      <p class="msg" id="clearLogsMsg"></p>
     </div>
 
     <div class="card" id="overrideCodeCard">

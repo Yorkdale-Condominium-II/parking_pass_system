@@ -20,7 +20,7 @@ const ROLE_VIEWS = {
   management: ['lookup', 'issue', 'verify', 'spots', 'requests', 'admin', 'board'],
   board:      ['board'],
 };
-const VIEW_LABELS = { lookup: 'Lookup', issue: 'Issue Pass', verify: 'Verify', spots: 'Spots', requests: 'Requests', admin: 'Management', board: 'Dashboard' };
+const VIEW_LABELS = { lookup: 'Lookup', issue: 'Issue Pass', verify: 'Verify', spots: 'Spots', requests: 'Requests', admin: 'Yorkdale Manager', board: 'Dashboard' };
 let currentUser = null;
 let unitIndex = {};   // unit_number -> {kind, business_name}
 let regionData = null;
@@ -31,7 +31,7 @@ function showView(name) {
   if (el) el.hidden = false;
   document.querySelectorAll('#nav button').forEach((b) => b.classList.toggle('active', b.dataset.view === name));
   if (name === 'board') loadBoard();
-  if (name === 'admin') { loadAudit(); loadAuthAudit(); loadOverrideCode(); loadExportDatasets(); loadYearEnd(); }
+  if (name === 'admin') { loadAudit(); loadAuthAudit(); loadOverrideCode(); loadExportDatasets(); loadYearEnd(); loadUsers(); }
   if (name === 'issue') { loadUnits(); loadSpotsBadge(); }
   if (name === 'requests') loadRequests();
   if (name === 'spots') loadSpots();
@@ -113,12 +113,18 @@ $('#lookupForm').onsubmit = async (e) => {
     const reg = r.registeredVehicles.map((v) =>
       `<tr><td>${v.licence_plate}</td><td>${v.unit_number}${v.business_name ? ' · ' + v.business_name : ''}</td><td>${v.resident_name || '—'}</td><td>${v.phone || '—'}</td><td>${[v.color, v.make, v.model].filter(Boolean).join(' ') || '—'}</td></tr>`).join('');
     const passes = r.visitorPasses.map((p) =>
-      `<tr><td>${p.unit_number}</td><td>${p.visitor_plate}${p.visitor_region ? ' (' + p.visitor_region.replace('-', ' ') + ')' : ''}</td><td>${p.visitor_name || '—'}</td><td><span class="badge ${p.status === 'active' ? 'VALID' : 'REVOKED'}">${p.status}</span></td><td>${new Date(p.expires_at).toLocaleString()}</td></tr>`).join('');
+      `<tr><td>${p.unit_number}</td><td>${p.visitor_plate}${p.visitor_region ? ' (' + p.visitor_region.replace('-', ' ') + ')' : ''}</td><td>${p.visitor_name || '—'}</td><td><span class="badge ${p.status === 'active' ? 'VALID' : 'REVOKED'}">${p.status}</span></td><td>${new Date(p.expires_at).toLocaleString()}</td><td>${p.status === 'active' ? `<button type="button" class="danger" data-action="cancel" data-id="${p.id}">Cancel</button>` : ''}</td></tr>`).join('');
     $('#lookupResult').innerHTML = `
       <div class="result-card"><h3>Registered vehicles</h3>${reg ? `<table><tr><th>Plate</th><th>Unit</th><th>Resident</th><th>Phone</th><th>Vehicle</th></tr>${reg}</table>` : '<p>None found.</p>'}</div>
-      <div class="result-card"><h3>Visitor passes</h3>${passes ? `<table><tr><th>Unit</th><th>Plate</th><th>Visitor</th><th>Status</th><th>Expires</th></tr>${passes}</table>` : '<p>None found.</p>'}</div>`;
+      <div class="result-card"><h3>Visitor passes</h3>${passes ? `<table><tr><th>Unit</th><th>Plate</th><th>Visitor</th><th>Status</th><th>Expires</th><th></th></tr>${passes}</table>` : '<p>None found.</p>'}</div>`;
   } catch (err) { $('#lookupResult').innerHTML = `<p class="error">${err.message}</p>`; }
 };
+$('#lookupResult').addEventListener('click', async (e) => {
+  const btn = e.target.closest('button[data-action="cancel"]'); if (!btn) return;
+  if (!confirm('Cancel this pass? It will no longer be valid.')) return;
+  try { await api(`/passes/${btn.dataset.id}/revoke`, { method: 'POST' }); btn.closest('tr').remove(); }
+  catch (err) { alert(err.message); }
+});
 
 // --- Issue ---
 document.querySelectorAll('#durationRow .dur').forEach((b) => {
@@ -243,7 +249,7 @@ async function doVerify(body) {
       <p>Expires: ${new Date(r.pass.expires_at).toLocaleString()}</p>
       ${r.verdict === 'VALID' ? `<div class="btn-row">
         <button type="button" data-action="vacate" data-id="${r.pass.id}">Vehicle vacated (free spot)</button>
-        <button type="button" class="danger" data-action="revoke" data-id="${r.pass.id}">Revoke this pass</button>
+        <button type="button" class="danger" data-action="revoke" data-id="${r.pass.id}">Cancel pass</button>
       </div>` : ''}` : `<p>Reason: ${r.reason}</p>`;
     $('#verifyResult').innerHTML = `<div class="result-card"><span class="badge ${r.verdict}">${r.verdict}</span>${detail}</div>`;
   } catch (err) { $('#verifyResult').innerHTML = `<p class="error">${err.message}</p>`; }
@@ -252,7 +258,7 @@ $('#verifyResult').addEventListener('click', async (e) => {
   const btn = e.target.closest('button[data-action]');
   if (!btn) return;
   const act = btn.dataset.action;
-  if (act === 'revoke') { await api(`/passes/${btn.dataset.id}/revoke`, { method: 'POST' }); alert('Pass revoked.'); }
+  if (act === 'revoke') { if (!confirm('Cancel this pass? It will no longer be valid.')) return; await api(`/passes/${btn.dataset.id}/revoke`, { method: 'POST' }); alert('Pass cancelled.'); }
   if (act === 'vacate') { await api(`/passes/${btn.dataset.id}/vacate`, { method: 'POST' }); alert('Spot freed — vehicle marked as vacated.'); }
 });
 
@@ -262,9 +268,61 @@ $('#userForm').onsubmit = async (e) => {
   e.preventDefault();
   const f = new FormData(e.target);
   try {
-    await api('/admin/users', { method: 'POST', body: { username: f.get('username'), fullName: f.get('fullName'), role: f.get('role'), password: f.get('password') } });
-    $('#userMsg').textContent = 'User created.'; e.target.reset();
+    await api('/admin/users', { method: 'POST', body: { username: f.get('username'), firstName: f.get('firstName'), lastName: f.get('lastName'), role: f.get('role'), password: f.get('password') } });
+    $('#userMsg').textContent = 'User created.'; e.target.reset(); loadUsers();
   } catch (err) { $('#userMsg').textContent = err.message; }
+};
+
+// --- Manage users ---
+$('#refreshUsers').onclick = loadUsers;
+async function loadUsers() {
+  const rows = await api('/admin/users');
+  $('#usersTable').innerHTML = `<table><tr><th>Name</th><th>Username</th><th>Role</th><th>Status</th><th>Actions</th></tr>` +
+    rows.map((u) => `<tr>
+      <td>${u.first_name || ''} ${u.last_name || ''}</td>
+      <td>${u.username}</td>
+      <td>${u.role}</td>
+      <td>${u.is_active ? 'Active' : '<span style="color:#b3261e">Disabled</span>'}</td>
+      <td>
+        <button type="button" data-uact="history" data-id="${u.id}" data-name="${u.first_name} ${u.last_name}">History</button>
+        <button type="button" data-uact="toggle" data-id="${u.id}" data-active="${u.is_active}">${u.is_active ? 'Disable' : 'Enable'}</button>
+        <button type="button" data-uact="resetpw" data-id="${u.id}">Reset pw</button>
+      </td></tr>`).join('') + `</table>`;
+}
+$('#usersTable').addEventListener('click', async (e) => {
+  const btn = e.target.closest('button[data-uact]'); if (!btn) return;
+  const id = btn.dataset.id;
+  try {
+    if (btn.dataset.uact === 'toggle') {
+      await api(`/admin/users/${id}`, { method: 'PATCH', body: { isActive: btn.dataset.active !== 'true' } });
+      loadUsers();
+    } else if (btn.dataset.uact === 'resetpw') {
+      const pw = prompt('New password (min 8 chars):');
+      if (!pw) return;
+      await api(`/admin/users/${id}/reset-password`, { method: 'POST', body: { password: pw } });
+      alert('Password reset.');
+    } else if (btn.dataset.uact === 'history') {
+      const h = await api(`/admin/users/${id}/history`);
+      const s = h.summary;
+      $('#userHistory').innerHTML = `<div class="result-card">
+        <h3>Activity — ${btn.dataset.name}</h3>
+        <p>Issued: <b>${s.issued}</b> · Cancelled: <b>${s.cancelled}</b> · Vacated: <b>${s.vacated}</b> · Verified: <b>${s.verified}</b></p>
+        <table><tr><th>Time</th><th>Action</th><th>Unit</th><th>Plate</th></tr>` +
+        h.events.map((ev) => `<tr><td>${new Date(ev.created_at).toLocaleString()}</td><td>${ev.action}</td><td>${ev.unit_number || '—'}</td><td>${ev.visitor_plate || '—'}</td></tr>`).join('') +
+        `</table></div>`;
+    }
+  } catch (err) { alert(err.message); }
+});
+
+// --- Clear all logs ---
+$('#clearLogsBtn').onclick = async () => {
+  if (!confirm('Have you downloaded all data you need? This deletes all audit logs and historical passes/requests. It CANNOT be undone.')) return;
+  if (!confirm('Final confirmation — clear all logs now?')) return;
+  try {
+    const r = await api('/admin/clear-logs', { method: 'POST', body: { confirm: true } });
+    $('#clearLogsMsg').textContent = `Cleared: ${r.deleted.pass_audit + r.deleted.auth_audit} log rows, ${r.deleted.passes} historical passes, ${r.deleted.requests} requests.`;
+    loadAudit(); loadAuthAudit(); loadUsers();
+  } catch (err) { $('#clearLogsMsg').textContent = err.message; }
 };
 $('#unitForm').onsubmit = async (e) => {
   e.preventDefault();
@@ -378,16 +436,24 @@ async function loadSpots() {
     <div class="result-card">
       <p>Unit <b>${p.unit_number}</b> · Plate <b>${p.visitor_plate}</b>${p.visitor_region ? ' (' + p.visitor_region.replace('-', ' ') + ')' : ''} · ${p.visitor_name || 'visitor'}</p>
       <p class="hint">Until ${new Date(p.expires_at).toLocaleString()}</p>
-      <button type="button" class="danger" data-action="vacate" data-id="${p.id}">Mark vacated (free spot)</button>
+      <div class="btn-row">
+        <button type="button" data-action="vacate" data-id="${p.id}">Mark vacated (free spot)</button>
+        <button type="button" class="danger" data-action="cancel" data-id="${p.id}">Cancel pass</button>
+      </div>
     </div>`).join('') : '<p>No spaces occupied right now.</p>';
   $('#spotsUpcoming').innerHTML = s.upcoming.length ? `<table><tr><th>Starts</th><th>Unit</th><th>Plate</th><th>Until</th></tr>` +
     s.upcoming.map((p) => `<tr><td>${new Date(p.starts_at).toLocaleString()}</td><td>${p.unit_number}</td><td>${p.visitor_plate}</td><td>${new Date(p.expires_at).toLocaleString()}</td></tr>`).join('') + `</table>` : '<p>Nothing scheduled.</p>';
 }
 $('#spotsLive').addEventListener('click', async (e) => {
-  const btn = e.target.closest('button[data-action="vacate"]');
+  const btn = e.target.closest('button[data-action]');
   if (!btn) return;
-  if (!confirm('Confirm the vehicle has left. This frees the spot for the next guest.')) return;
-  await api(`/passes/${btn.dataset.id}/vacate`, { method: 'POST' });
+  if (btn.dataset.action === 'vacate') {
+    if (!confirm('Confirm the vehicle has left. This frees the spot for the next guest.')) return;
+    await api(`/passes/${btn.dataset.id}/vacate`, { method: 'POST' });
+  } else if (btn.dataset.action === 'cancel') {
+    if (!confirm('Cancel this pass? It will no longer be valid.')) return;
+    await api(`/passes/${btn.dataset.id}/revoke`, { method: 'POST' });
+  }
   loadSpots();
 });
 async function loadSpotsBadge() {

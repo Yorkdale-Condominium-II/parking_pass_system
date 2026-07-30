@@ -151,6 +151,27 @@ resident can check status any time at the bottom of the portal by entering it
 request emails them the pass with a **printable PDF attached** (requires SMTP —
 see `.env.example`; without it, approval still works and the email is skipped).
 
+### Open Desk kiosk (no login)
+
+`public/desk.html` (served at `/desk.html`, linked from the login page) is a
+public station for issuing passes without a logged-in session: the operator
+fills the visit details, picks the **issuing officer** from a dropdown, and
+confirms with **that officer's password**. Each issuance is authenticated
+per-submission and recorded (`desk_issue` / `desk_issue_failed`) in the sign-in
+audit log. The printable pass is reachable without a session via a short-code
+gated link. The main app stays login-protected.
+
+### Yorkdale Manager (users & logs)
+
+The Management console (labelled **Yorkdale Manager**) includes a **Manage
+users** section — create with first/last name, activate/deactivate, reset
+password, and view each user's **history** (issued / cancelled / vacated /
+verified counts + recent events). Passes can be **cancelled** (voided) from
+Lookup, Verify, and the Spots board by both Security and Management. **Clear all
+logs** performs a full archive-and-clear: it deletes all audit logs plus
+completed/historical passes and decided requests, while keeping live/scheduled
+passes and pending requests (double-confirmed; export first).
+
 ### Physical spaces, scheduling & live occupancy
 
 The building has a fixed number of visitor spaces (`SPOT_CAPACITY`, default 5).

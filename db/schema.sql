@@ -285,3 +285,16 @@ CREATE INDEX IF NOT EXISTS idx_pass_window
 ALTER TABLE pass_requests ADD COLUMN IF NOT EXISTS starts_at TIMESTAMPTZ;
 
 COMMIT;
+
+-- ============================================================================
+--  v6 migration — split user names into first/last.
+-- ============================================================================
+BEGIN;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS first_name TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS last_name  TEXT;
+-- Backfill from the existing full_name (first token = first name, rest = last).
+UPDATE users
+   SET first_name = split_part(full_name, ' ', 1),
+       last_name  = NULLIF(regexp_replace(full_name, '^\S+\s*', ''), '')
+ WHERE first_name IS NULL;
+COMMIT;
