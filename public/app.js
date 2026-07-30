@@ -19,14 +19,32 @@ const api = async (path, opts = {}) => {
   return data;
 };
 
-const ROLE_VIEWS = {
-  security:   ['lookup', 'issue', 'verify', 'spots', 'requests', 'account'],
-  management: ['lookup', 'issue', 'verify', 'spots', 'requests', 'board', 'admin', 'account'],
-  board:      ['board', 'account'],
+// Each nav tab is a "page" that shows one or more view sections together.
+const PAGES = {
+  issue:    { label: 'Issue Pass',        views: ['issue'] },
+  lookup:   { label: 'Lookup & Verify',   views: ['lookup', 'verify'] },
+  spots:    { label: 'Spots & Dashboard', views: ['spots', 'board'] },
+  requests: { label: 'Requests',          views: ['requests'] },
+  admin:    { label: 'Yorkdale Manager',  views: ['admin'] },
+  account:  { label: 'Account',           views: ['account'] },
 };
-// Views grouped under a "System Management" label in the nav.
+// Page order per role. Issue Pass is the primary (first) tab.
+const ROLE_PAGES = {
+  security:   ['issue', 'lookup', 'spots', 'requests', 'account'],
+  management: ['issue', 'lookup', 'spots', 'requests', 'admin', 'account'],
+};
+// Pages grouped under a "System Management" label in the nav.
 const SYS_GROUP = ['admin', 'account'];
-const VIEW_LABELS = { lookup: 'Lookup', issue: 'Issue Pass', verify: 'Verify', spots: 'Spots', requests: 'Requests', admin: 'Yorkdale Manager', board: 'Dashboard', account: 'Account' };
+// Dashboard analytics are management-only; every other view is open to any role.
+function canSeeView(v) { return v === 'board' ? !!currentUser && currentUser.role === 'management' : true; }
+const VIEW_LOADERS = {
+  board: () => loadBoard(),
+  admin: () => { loadAudit(); loadAuthAudit(); loadOverrideCode(); loadExportDatasets(); loadYearEnd(); loadUsers(); loadUnitsList(); $('#orgNameInput').value = orgName; },
+  issue: () => { loadUnits(); loadSpotsBadge(); },
+  requests: () => loadRequests(),
+  spots: () => loadSpots(),
+  account: () => loadAccount(),
+};
 let currentUser = null;
 let unitIndex = {};   // unit_number -> {kind, business_name}
 let regionData = null;
@@ -58,41 +76,42 @@ function applyVersion() {
   document.title = `${orgName} — Parking Management (v${appVersion})`;
 }
 
-function showView(name) {
+// Show a page (nav tab). A page can contain more than one view section, shown
+// stacked; each shown view runs its loader. `key` is a page key (e.g. 'lookup').
+function showView(key) {
+  const page = PAGES[key];
+  const views = (page ? page.views : [key]).filter(canSeeView);
   document.querySelectorAll('.view').forEach((v) => (v.hidden = true));
-  const el = $('#view-' + name);
-  if (el) el.hidden = false;
-  document.querySelectorAll('#nav button').forEach((b) => b.classList.toggle('active', b.dataset.view === name));
-  if (name === 'board') loadBoard();
-  if (name === 'admin') { loadAudit(); loadAuthAudit(); loadOverrideCode(); loadExportDatasets(); loadYearEnd(); loadUsers(); loadUnitsList(); $('#orgNameInput').value = orgName; }
-  if (name === 'issue') { loadUnits(); loadSpotsBadge(); }
-  if (name === 'requests') loadRequests();
-  if (name === 'spots') loadSpots();
-  if (name === 'account') loadAccount();
-  if (name !== 'verify') stopCamera();
+  views.forEach((v) => {
+    const el = $('#view-' + v);
+    if (el) el.hidden = false;
+    if (VIEW_LOADERS[v]) VIEW_LOADERS[v]();
+  });
+  document.querySelectorAll('#nav button').forEach((b) => b.classList.toggle('active', b.dataset.page === key));
+  if (!views.includes('verify')) stopCamera();
 }
 
 async function refreshPendingBadge() {
   try {
     const { pending } = await api('/requests/pending-count');
-    const btn = document.querySelector('#nav button[data-view="requests"]');
-    if (btn) btn.textContent = VIEW_LABELS.requests + (pending ? ` (${pending})` : '');
+    const btn = document.querySelector('#nav button[data-page="requests"]');
+    if (btn) btn.textContent = PAGES.requests.label + (pending ? ` (${pending})` : '');
   } catch {}
 }
 
 function renderNav() {
-  const views = ROLE_VIEWS[currentUser.role] || [];
-  const btn = (v) => `<button data-view="${v}">${VIEW_LABELS[v]}</button>`;
-  const main = views.filter((v) => !SYS_GROUP.includes(v));
-  const group = views.filter((v) => SYS_GROUP.includes(v));
+  const pages = ROLE_PAGES[currentUser.role] || [];
+  const btn = (k) => `<button data-page="${k}">${PAGES[k].label}</button>`;
+  const main = pages.filter((k) => !SYS_GROUP.includes(k));
+  const group = pages.filter((k) => SYS_GROUP.includes(k));
   let html = main.map(btn).join('');
   if (group.length) {
     html += `<span class="nav-group"><span class="nav-group-label">System Management</span>${group.map(btn).join('')}</span>`;
   }
   $('#nav').innerHTML = html;
-  document.querySelectorAll('#nav button').forEach((b) => (b.onclick = () => showView(b.dataset.view)));
-  if (views.includes('requests')) refreshPendingBadge();
-  showView(views[0]);
+  document.querySelectorAll('#nav button').forEach((b) => (b.onclick = () => showView(b.dataset.page)));
+  if (pages.includes('requests')) refreshPendingBadge();
+  showView(pages[0]);
 }
 
 async function enterApp(user) {
@@ -747,8 +766,8 @@ $('#spotsLive').addEventListener('click', async (e) => {
 async function loadSpotsBadge() {
   try {
     const s = await api('/spots');
-    const btn = document.querySelector('#nav button[data-view="spots"]');
-    if (btn) btn.textContent = `${VIEW_LABELS.spots} (${s.available}/${s.capacity})`;
+    const btn = document.querySelector('#nav button[data-page="spots"]');
+    if (btn) btn.textContent = `${PAGES.spots.label} (${s.available}/${s.capacity})`;
   } catch {}
 }
 
@@ -795,7 +814,7 @@ $('#yearEndBox').addEventListener('click', async (e) => {
 });
 
 // --- Account (all roles) ---
-const ROLE_LABELS = { security: 'Security', management: 'Management', board: 'Board' };
+const ROLE_LABELS = { security: 'Security', management: 'Management' };
 async function loadAccount() {
   let a;
   try {

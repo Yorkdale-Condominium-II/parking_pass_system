@@ -6,7 +6,7 @@ const { requireAuth, requireRole } = require('./../auth/middleware');
 const router = express.Router();
 
 // Board dashboards: aggregate analytics ONLY. No resident PII, no plates.
-router.use(requireAuth, requireRole('board', 'management'));
+router.use(requireAuth, requireRole('management'));
 
 router.get('/summary', async (req, res) => {
   const year = parseInt(req.query.year || new Date().getUTCFullYear(), 10);

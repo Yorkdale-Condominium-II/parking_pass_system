@@ -66,7 +66,6 @@ test.before(async () => {
   for (const [u, n, r] of [
     ['security1', 'Sam Security', 'security'],
     ['manager1', 'Morgan Manager', 'management'],
-    ['board1', 'Blair Board', 'board'],
   ]) {
     await db.query(
       `INSERT INTO users (username, full_name, role, password_hash) VALUES ($1,$2,$3,$4)`,
@@ -412,26 +411,25 @@ test('sign-ins are recorded in the auth audit log', async () => {
   assert.ok(log.body.some((r) => r.event === 'login_failed' && r.success === false));
 });
 
-test('board sees aggregates but is denied resident/plate data', async () => {
-  const board = makeClient();
-  await board('POST', '/api/auth/login', { username: 'board1', password: 'changeme123' });
-
+test('dashboard summary is management-only and carries no PII', async () => {
   // Seed a couple of passes so the aggregates are non-zero.
   const staff = makeClient();
   await staff('POST', '/api/auth/login', { username: 'security1', password: 'changeme123' });
   await issueAndFree(staff, '1204', 'BRD1');
   await issueAndFree(staff, 'C-101', 'BRD2');
 
-  const summary = await board('GET', '/api/board/summary');
+  // Management can read the aggregate dashboard.
+  const mgr = makeClient();
+  await mgr('POST', '/api/auth/login', { username: 'manager1', password: 'changeme123' });
+  const summary = await mgr('GET', '/api/board/summary');
   assert.equal(summary.status, 200);
   assert.ok(summary.body.totals.total_passes >= 2);
-  // No PII fields leak into the board payload.
+  // No PII fields leak into the dashboard payload.
   assert.equal(JSON.stringify(summary.body).includes('visitor_name'), false);
 
-  const lookup = await board('GET', '/api/passes/lookup?plate=ABCD123');
-  assert.equal(lookup.status, 403);
-  const admin = await board('GET', '/api/admin/audit');
-  assert.equal(admin.status, 403);
+  // Security (limited access) cannot read the dashboard.
+  const denied = await staff('GET', '/api/board/summary');
+  assert.equal(denied.status, 403);
 });
 
 test('management admin can create a user and read the audit log', async () => {
@@ -899,9 +897,9 @@ test('account self-edit: details editable by all; role only by a superuser', asy
   assert.equal(secRole.body.error, 'role_change_forbidden');
 
   // A superuser changing their own role succeeds and re-scopes their nav/views.
-  const mgrRole = await mgr('PATCH', '/api/auth/account', { role: 'board' });
+  const mgrRole = await mgr('PATCH', '/api/auth/account', { role: 'security' });
   assert.equal(mgrRole.status, 200);
-  assert.equal(mgrRole.body.role, 'board');
+  assert.equal(mgrRole.body.role, 'security');
   // Superuser status is independent of role — still a superuser after the change.
   assert.equal(mgrRole.body.is_superuser, true);
   // Restore manager1 to management so later tests (which share this DB) still
@@ -910,7 +908,7 @@ test('account self-edit: details editable by all; role only by a superuser', asy
   assert.equal(restore.body.role, 'management');
 
   // Duplicate username is rejected.
-  const dup = await sec('PATCH', '/api/auth/account', { username: 'board1' });
+  const dup = await sec('PATCH', '/api/auth/account', { username: 'manager1' });
   assert.equal(dup.status, 409);
   assert.equal(dup.body.error, 'username_taken');
 });
@@ -935,7 +933,7 @@ test('admin: only a superuser can change another user\'s role or superuser flag'
   await plain('POST', '/api/auth/login', { username: 'manager2', password: 'changeme123' });
   const nameOnly = await plain('PATCH', `/api/admin/users/${secUser.id}`, { firstName: 'Renamed' });
   assert.equal(nameOnly.status, 200);
-  const roleTry = await plain('PATCH', `/api/admin/users/${secUser.id}`, { role: 'board' });
+  const roleTry = await plain('PATCH', `/api/admin/users/${secUser.id}`, { role: 'management' });
   assert.equal(roleTry.status, 403);
   assert.equal(roleTry.body.error, 'superuser_required');
   const supTry = await plain('PATCH', `/api/admin/users/${secUser.id}`, { isSuperuser: true });
@@ -1098,14 +1096,14 @@ test('password reset by email: request is generic; token sets a new password', a
 });
 
 test('password reset is refused for a disabled account', async () => {
-  // Deactivate board1 and confirm no reset link is issued (must use recovery).
-  await db.query(`UPDATE users SET email = 'b@example.com', is_active = FALSE WHERE username = 'board1'`);
-  const uid = (await db.query(`SELECT id FROM users WHERE username = 'board1'`)).rows[0].id;
+  // Deactivate security1 and confirm no reset link is issued (must use recovery).
+  await db.query(`UPDATE users SET email = 'b@example.com', is_active = FALSE WHERE username = 'security1'`);
+  const uid = (await db.query(`SELECT id FROM users WHERE username = 'security1'`)).rows[0].id;
   const anon = makeClient();
-  const req = await anon('POST', '/api/auth/forgot-password', { identifier: 'board1' });
+  const req = await anon('POST', '/api/auth/forgot-password', { identifier: 'security1' });
   assert.equal(req.status, 200); // still generic
   const n = (await db.query(`SELECT count(*)::int n FROM password_resets WHERE user_id = $1`, [uid])).rows[0].n;
   assert.equal(n, 0);
   // Re-activate so we don't leave the shared DB in a surprising state.
-  await db.query(`UPDATE users SET is_active = TRUE WHERE username = 'board1'`);
+  await db.query(`UPDATE users SET is_active = TRUE WHERE username = 'security1'`);
 });

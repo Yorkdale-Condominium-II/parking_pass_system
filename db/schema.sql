@@ -366,3 +366,14 @@ CREATE TABLE IF NOT EXISTS password_resets (
 CREATE INDEX IF NOT EXISTS idx_pwreset_token ON password_resets(token_hash);
 CREATE INDEX IF NOT EXISTS idx_pwreset_user  ON password_resets(user_id);
 COMMIT;
+
+-- ============================================================================
+--  v12 migration — retire the Board role. The system now has two roles:
+--  Security (limited access) and Management (full/superuser). Any existing
+--  Board accounts are converted to Security so they keep a valid role. The
+--  'board' enum value is left in place (harmless, unused) because removing an
+--  enum value in Postgres is disruptive; the app no longer offers it.
+-- ============================================================================
+BEGIN;
+UPDATE users SET role = 'security', updated_at = now() WHERE role = 'board';
+COMMIT;

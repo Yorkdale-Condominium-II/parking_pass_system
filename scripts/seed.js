@@ -8,7 +8,6 @@ const password = require('../src/auth/password');
   const users = [
     ['security1', 'Sam', 'Security', 'security'],
     ['manager1', 'Yorkdale', 'Property Manager', 'management'],
-    ['board1', 'Blair', 'Board', 'board'],
   ];
   for (const [username, first, last, role] of users) {
     await db.query(
@@ -53,7 +52,7 @@ const password = require('../src/auth/password');
   );
 
   // eslint-disable-next-line no-console
-  console.log('✓ Seed complete. Logins: security1 / manager1 / board1  (password: changeme123)');
+  console.log('✓ Seed complete. Logins: security1 / manager1  (password: changeme123)');
   await db.pool.end();
 })().catch((err) => {
   // eslint-disable-next-line no-console

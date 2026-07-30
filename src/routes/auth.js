@@ -229,7 +229,7 @@ router.patch('/account', requireAuth, async (req, res) => {
   if (role !== undefined && role !== cur.rows[0].role) {
     // Only superusers may change a role — including their own.
     if (!cur.rows[0].is_superuser) return res.status(403).json({ error: 'role_change_forbidden' });
-    if (!['security', 'management', 'board'].includes(role)) {
+    if (!['security', 'management'].includes(role)) {
       return res.status(400).json({ error: 'invalid_role' });
     }
     add('role', role);

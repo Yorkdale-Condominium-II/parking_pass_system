@@ -15,14 +15,19 @@ A continuation guide for picking this project back up in a new session.
 it, `GET /api/settings` returns it (public), and the SPA shows it as a `vX.Y.Z`
 badge in the top-bar header and in the browser tab title. **Bump `package.json`
 with every committed change** so the running build is identifiable at a glance
-(semver: patch for fixes, minor for features). Current: **1.11.0**.
+(semver: patch for fixes, minor for features). Current: **1.12.0**.
 
 ---
 
 ## 1. What the system does today
 
 A Node.js/Express + PostgreSQL app (vanilla JS front-end) for condo visitor
-parking. Roles: **Security**, **Management** ("Yorkdale Manager"), **Board**.
+parking. Two roles: **Security** (limited access) and **Management**
+("Yorkdale Manager", bootstrapped as superuser). The former **Board** role was
+retired (v12 migration converts any board accounts to Security); the aggregate
+**Dashboard** it used is now a management-only view. Nav is organised into
+pages: **Issue Pass** (primary), **Lookup & Verify**, **Spots & Dashboard**,
+**Requests**, and a **System Management** group (Yorkdale Manager, Account).
 
 Implemented and tested:
 - Auth: username/password (bcrypt, JWT httpOnly session), rate-limited logins,

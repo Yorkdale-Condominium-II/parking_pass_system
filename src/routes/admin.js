@@ -12,7 +12,7 @@ const router = express.Router();
 
 // The weekly override code is viewable by Management AND Board (they distribute
 // it), so that one route is mounted before the management-only gate below.
-router.get('/override-code', requireAuth, requireRole('management', 'board'), (req, res) => {
+router.get('/override-code', requireAuth, requireRole('management'), (req, res) => {
   const now = new Date();
   const nextWeek = new Date(now.getTime() + 7 * 24 * 3600 * 1000);
   res.json({
@@ -31,7 +31,7 @@ router.post('/users', async (req, res) => {
   if (!username || !firstName || !lastName || !role || !pw) {
     return res.status(400).json({ error: 'missing_fields' });
   }
-  if (!['security', 'management', 'board'].includes(role)) {
+  if (!['security', 'management'].includes(role)) {
     return res.status(400).json({ error: 'invalid_role' });
   }
   const fullName = `${firstName.trim()} ${lastName.trim()}`;
@@ -63,7 +63,7 @@ router.get('/users', async (req, res) => {
 // Update a user: names, role, active state, or superuser flag.
 router.patch('/users/:id', async (req, res) => {
   const { firstName, lastName, role, email, isActive, isSuperuser } = req.body || {};
-  if (role && !['security', 'management', 'board'].includes(role)) {
+  if (role && !['security', 'management'].includes(role)) {
     return res.status(400).json({ error: 'invalid_role' });
   }
   // Changing a role or the superuser flag is reserved for superusers.
