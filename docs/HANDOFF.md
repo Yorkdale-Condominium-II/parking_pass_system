@@ -1,0 +1,120 @@
+# Project Handoff — Parking Pass System
+
+A continuation guide for picking this project back up in a new session.
+
+- **Repo:** `Yorkdale-Condominium-II/parking_pass_system`
+- **Working branch:** `claude/condo-property-management-8f0seo`
+- **Latest commit at handoff:** `ae68cd9`
+- **Tests:** `npm test` → 32 integration cases, all passing (needs a Postgres test DB).
+
+---
+
+## 1. What the system does today
+
+A Node.js/Express + PostgreSQL app (vanilla JS front-end) for condo visitor
+parking. Roles: **Security**, **Management** ("Yorkdale Manager"), **Board**.
+
+Implemented and tested:
+- Auth: username/password (bcrypt, JWT httpOnly session), rate-limited logins,
+  sign-in audit log.
+- **Temporary password → forced reset** on first login; users **self-link**
+  Google/Microsoft on the **Account** screen; SSO login matched by provider
+  subject then email (SSO authenticates; the users table authorizes).
+- Lookup by plate / unit / name / phone.
+- Issue passes: unit validated against registry, split visitor name, province/
+  state, duration presets (rest of today / noon tomorrow), **scheduling** a
+  future start.
+- Quotas: 10/yr residential, 20/yr commercial (config), weekly rotating
+  **override code**.
+- **5 physical spaces**: building-wide live-occupancy cap with peak-overlap
+  check across scheduled windows; **security spot-override**; **Spots** live
+  board; **vacate** to free a spot early.
+- Verify: camera QR + printed short code + token; verdicts VALID / EXPIRED /
+  REVOKED / SCHEDULED / VACATED. **Cancel** a pass from Lookup / Verify / Spots.
+- Cryptographic barcode (HMAC-SHA256 signed token) + human short code.
+- Print-ready 8.5×11 sheet (QR + short code + vacated-spot notice; no raw token).
+- **Resident portal** (`/resident.html`): public request form → pending →
+  staff approve/deny; short 6-char reference; public status lookup; approval
+  emails the pass PDF when SMTP is configured.
+- **Open Desk kiosk** (`/desk.html`): issue with officer dropdown + password,
+  **or** start a ~30-min **desk session via Google/Microsoft** and skip
+  per-pass passwords.
+- **Yorkdale Manager** console: settings (company/condo name), manage users
+  (create/activate/deactivate/reset pw/history), pass + sign-in audit logs,
+  weekly override code, data export (CSV/XLSX/PDF), year-end archive & clear,
+  clear-all-logs.
+- Board dashboard: aggregates only (no PII).
+
+## 2. Outstanding / optional configuration (needs YOUR credentials)
+
+These are built but inert until configured in `.env` (see `.env.example`):
+
+- **Email (approval emails):** SMTP via Gmail App Password or a service like
+  Brevo. Set `SMTP_*` + `MAIL_FROM`. NOTE: the condo's Google **Workspace**
+  account cannot create App Passwords (policy) — use a personal Gmail with
+  2-Step on, or a free SMTP service (Brevo/SMTP2GO).
+- **Google/Microsoft SSO:** register OAuth apps; set `GOOGLE_CLIENT_*` /
+  `MICROSOFT_CLIENT_*` + `OAUTH_BASE_URL`. Redirect URI:
+  `<OAUTH_BASE_URL>/api/auth/sso/<google|microsoft>/callback`.
+  Never end-to-end tested (no real provider creds yet) — first real login is
+  the test.
+
+## 3. Run it on the user's PC (Windows)
+
+Double-click **`start.bat`** (auto: git pull → npm install → migrate → start →
+open browser). First time only, pull manually:
+```
+cd %USERPROFILE%\Desktop\parking_pass_system
+git checkout -- package-lock.json
+git pull
+```
+Optional: run `create-desktop-shortcut.bat` once for a Desktop icon.
+
+Requirements: Node 18+, PostgreSQL 16 (service running), a `.env` with
+`DATABASE_URL`, `JWT_SECRET`, `BARCODE_SECRET` (and optionally the items in §2).
+Seeded demo logins (dev only): `security1` / `manager1` / `board1`, pw
+`changeme123`. URLs: app `/`, desk `/desk.html`, resident `/resident.html`.
+
+## 4. Dev / test in a fresh cloud session
+
+```
+npm install
+# point at a THROWAWAY test DB (the suite truncates tables):
+export TEST_DATABASE_URL='postgres://.../parking_pass_test'
+npm test          # expect 32 passing
+```
+The schema is one idempotent file (`db/schema.sql`) with additive v2–v9
+migration blocks; `npm run migrate` re-applies safely.
+
+## 5. Code map
+
+```
+src/server.js            route wiring + helmet CSP
+src/config.js            env-driven config (quota, spots, sso, etc.)
+src/db.js                pg pool + withTransaction
+src/auth/                password (bcrypt), middleware (JWT, desk session), sso helpers
+src/crypto/barcode.js    HMAC token, short code, weekly override code
+src/services/            quota, spots, passService, printTemplate, passPdf, export, mailer
+src/routes/              auth, sso, meta, settings, passes, verify, admin, board,
+                         resident, requests, spots, desk
+public/                  index.html + app.js (SPA), desk.html/js, resident.html/js, styles.css
+db/schema.sql            schema + v2..v9 idempotent migrations
+test/integration.test.js 32 end-to-end cases (node:test)
+```
+
+## 6. Deferred ideas / possible next steps
+- Configure + prove real Google (and Microsoft) SSO end-to-end.
+- Configure email (Brevo recommended) and verify an approval email.
+- Per-unit access code for the resident portal (anti-spam) if needed.
+- HTTPS + always-on host so desk/resident pages are reachable on the LAN and
+  SSO works on a non-localhost URL.
+- Bulk-import the real 1520 residential units + commercial tenants.
+
+## 7. Paste this into the new session to resume
+
+> Continue work on the parking_pass_system repo, branch
+> `claude/condo-property-management-8f0seo`. Read `docs/HANDOFF.md` first for
+> full context. It's a Node/Express + PostgreSQL condo visitor-parking app;
+> 32 integration tests currently pass. I want to work on: <YOUR NEXT TASK>.
+> Follow the existing patterns (idempotent `db/schema.sql` migrations,
+> integration tests in `test/integration.test.js`, commit + push to the branch).
