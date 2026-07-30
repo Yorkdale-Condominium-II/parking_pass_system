@@ -154,3 +154,59 @@ JOIN visitor_passes vp ON vp.unit_id = u.id
 GROUP BY u.id, u.unit_number, vp.calendar_year;
 
 COMMIT;
+
+-- ============================================================================
+--  v2 migration — additive, idempotent. Safe to re-run on existing databases.
+--    * unit kind (residential / commercial) + business tracing
+--    * split visitor name, visitor plate province/state, printed short code
+--    * sign-in (authentication) audit log
+-- ============================================================================
+BEGIN;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'unit_kind') THEN
+    CREATE TYPE unit_kind AS ENUM ('residential', 'commercial');
+  END IF;
+END$$;
+
+ALTER TABLE units ADD COLUMN IF NOT EXISTS kind unit_kind NOT NULL DEFAULT 'residential';
+ALTER TABLE units ADD COLUMN IF NOT EXISTS business_name    TEXT;   -- commercial only
+ALTER TABLE units ADD COLUMN IF NOT EXISTS business_contact TEXT;   -- commercial only
+CREATE INDEX IF NOT EXISTS idx_units_kind ON units(kind);
+
+ALTER TABLE visitor_passes ADD COLUMN IF NOT EXISTS visitor_first_name TEXT;
+ALTER TABLE visitor_passes ADD COLUMN IF NOT EXISTS visitor_last_name  TEXT;
+ALTER TABLE visitor_passes ADD COLUMN IF NOT EXISTS visitor_region     TEXT; -- province/state code
+ALTER TABLE visitor_passes ADD COLUMN IF NOT EXISTS short_code         TEXT; -- human-typable code on printout
+CREATE UNIQUE INDEX IF NOT EXISTS idx_pass_shortcode ON visitor_passes(short_code);
+
+-- Authentication (sign-in) audit trail — separate from pass_audit_log.
+CREATE TABLE IF NOT EXISTS auth_audit_log (
+    id          BIGSERIAL PRIMARY KEY,
+    user_id     UUID        REFERENCES users(id) ON DELETE SET NULL,
+    username    TEXT        NOT NULL,          -- recorded even for unknown users
+    event       TEXT        NOT NULL,          -- login_success | login_failed | logout
+    success     BOOLEAN     NOT NULL DEFAULT FALSE,
+    ip          TEXT,
+    user_agent  TEXT,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_authaudit_user ON auth_audit_log(user_id);
+CREATE INDEX IF NOT EXISTS idx_authaudit_time ON auth_audit_log(created_at);
+
+-- Rebuild the usage view to expose unit kind (used for quota + reporting).
+-- Dropped first because CREATE OR REPLACE cannot change column ordering.
+DROP VIEW IF EXISTS unit_year_usage;
+CREATE VIEW unit_year_usage AS
+SELECT
+    u.id            AS unit_id,
+    u.unit_number   AS unit_number,
+    u.kind          AS kind,
+    vp.calendar_year,
+    COUNT(*) FILTER (WHERE vp.status <> 'revoked') AS passes_used
+FROM units u
+JOIN visitor_passes vp ON vp.unit_id = u.id
+GROUP BY u.id, u.unit_number, u.kind, vp.calendar_year;
+
+COMMIT;

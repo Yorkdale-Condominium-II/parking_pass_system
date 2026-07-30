@@ -10,9 +10,13 @@ const router = express.Router();
 //  and returns an authenticity + status verdict.
 // ---------------------------------------------------------------------------
 router.post('/', requireAuth, requireRole('security', 'management'), async (req, res) => {
-  const { token } = req.body || {};
-  if (!token) return res.status(400).json({ error: 'token_required' });
-  const verdict = await passService.verifyPass(token, req.user.id);
+  const { token, shortCode } = req.body || {};
+  if (!token && !shortCode) return res.status(400).json({ error: 'token_or_short_code_required' });
+  // A scanned QR carries the full signed token; a keyed-in printout code is the
+  // short code. Prefer the token when both are somehow present.
+  const verdict = token
+    ? await passService.verifyPass(token, req.user.id)
+    : await passService.verifyByShortCode(shortCode, req.user.id);
   res.json(verdict);
 });
 

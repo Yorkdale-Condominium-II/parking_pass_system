@@ -9,47 +9,90 @@ const { renderPassSheet } = require('./../services/printTemplate');
 const router = express.Router();
 
 // ---------------------------------------------------------------------------
-//  Licence-plate lookup (Security + Management)
-//  Searches BOTH registered resident vehicles and active visitor passes.
+//  Multi-criteria lookup (Security + Management).
+//    by = plate | unit | name | phone
+//  Returns matching registered resident vehicles AND visitor passes.
 // ---------------------------------------------------------------------------
 router.get('/lookup', requireAuth, requireRole('security', 'management'), async (req, res) => {
-  const plate = passService.normalizePlate(req.query.plate || '');
-  if (!plate) return res.status(400).json({ error: 'plate_required' });
+  const by = String(req.query.by || 'plate').toLowerCase();
+  const raw = String(req.query.q || req.query.plate || '').trim();
+  if (!raw) return res.status(400).json({ error: 'query_required' });
+
+  let regWhere, regParam, passWhere, passParam;
+  switch (by) {
+    case 'unit':
+      regWhere = `u.unit_number ILIKE $1`;
+      passWhere = `u.unit_number ILIKE $1`;
+      regParam = passParam = raw + '%';
+      break;
+    case 'name':
+      // Resident name for registered vehicles; visitor name for passes.
+      regWhere = `r.full_name ILIKE $1`;
+      passWhere = `vp.visitor_name ILIKE $1`;
+      regParam = passParam = '%' + raw + '%';
+      break;
+    case 'phone': {
+      const digits = raw.replace(/\D/g, '');
+      regWhere = `regexp_replace(coalesce(r.phone,''), '\\D', '', 'g') LIKE $1`;
+      passWhere = `FALSE`; // passes have no phone
+      regParam = '%' + digits + '%';
+      passParam = null;
+      break;
+    }
+    case 'plate':
+    default: {
+      const plate = passService.normalizePlate(raw);
+      regWhere = `rv.licence_plate = $1`;
+      passWhere = `vp.visitor_plate = $1`;
+      regParam = passParam = plate;
+      break;
+    }
+  }
 
   const registered = await db.query(
     `SELECT rv.licence_plate, rv.make, rv.model, rv.color, rv.province,
-            u.unit_number, r.full_name AS resident_name
+            u.unit_number, u.kind, u.business_name, r.full_name AS resident_name, r.phone
        FROM registered_vehicles rv
        JOIN units u ON u.id = rv.unit_id
        LEFT JOIN residents r ON r.id = rv.resident_id
-      WHERE rv.licence_plate = $1`,
-    [plate]
+      WHERE ${regWhere}
+      ORDER BY u.unit_number
+      LIMIT 25`,
+    [regParam]
   );
 
-  const passes = await db.query(
-    `SELECT vp.id, vp.visitor_plate, vp.visitor_name, vp.status,
-            vp.issued_at, vp.expires_at, u.unit_number
-       FROM visitor_passes vp
-       JOIN units u ON u.id = vp.unit_id
-      WHERE vp.visitor_plate = $1
-      ORDER BY vp.issued_at DESC
-      LIMIT 10`,
-    [plate]
-  );
+  let passes = { rows: [] };
+  if (passWhere !== 'FALSE') {
+    passes = await db.query(
+      `SELECT vp.id, vp.visitor_plate, vp.visitor_name, vp.visitor_region, vp.status,
+              vp.issued_at, vp.expires_at, vp.short_code, u.unit_number, u.kind, u.business_name
+         FROM visitor_passes vp
+         JOIN units u ON u.id = vp.unit_id
+        WHERE ${passWhere}
+        ORDER BY vp.issued_at DESC
+        LIMIT 25`,
+      [passParam]
+    );
+  }
 
   res.json({
-    plate,
+    by,
+    query: raw,
     registeredVehicles: registered.rows,
     visitorPasses: passes.rows,
   });
 });
 
 // ---------------------------------------------------------------------------
-//  Issue a visitor pass (Security + Management). Override requires Management.
+//  Issue a visitor pass (Security + Management). A quota override requires the
+//  current weekly override code (distributed to Management/Board).
 // ---------------------------------------------------------------------------
 router.post('/', requireAuth, requireRole('security', 'management'), async (req, res) => {
-  const { unitNumber, visitorPlate, visitorName, durationHours, override, overrideReason } =
-    req.body || {};
+  const {
+    unitNumber, visitorPlate, visitorFirstName, visitorLastName,
+    visitorCountry, visitorRegion, durationPreset, durationHours,
+    override, overrideCode, overrideReason,
+  } = req.body || {};
   if (!unitNumber || !visitorPlate) {
     return res.status(400).json({ error: 'unit_and_plate_required' });
   }
@@ -57,16 +100,24 @@ router.post('/', requireAuth, requireRole('security', 'management'), async (req,
     const result = await passService.issuePass({
       unitNumber,
       visitorPlate,
-      visitorName,
+      visitorFirstName,
+      visitorLastName,
+      visitorCountry,
+      visitorRegion,
+      durationPreset,
       durationHours: durationHours ? parseInt(durationHours, 10) : undefined,
       issuer: req.user,
       override: Boolean(override),
+      overrideCode,
       overrideReason,
     });
     res.status(201).json({
       passId: result.pass.id,
       unitNumber: result.pass.unit_number,
+      kind: result.pass.kind,
       visitorPlate: result.pass.visitor_plate,
+      visitorName: result.pass.visitor_name,
+      shortCode: result.shortCode,
       issuedAt: result.pass.issued_at,
       expiresAt: result.pass.expires_at,
       token: result.token,
@@ -78,9 +129,10 @@ router.post('/', requireAuth, requireRole('security', 'management'), async (req,
     const codeMap = {
       unit_not_found: 404,
       quota_exceeded: 409,
-      override_not_authorized: 403,
+      override_code_invalid: 403,
       override_reason_required: 400,
       invalid_plate: 400,
+      invalid_region: 400,
     };
     if (codeMap[err.code]) {
       return res.status(codeMap[err.code]).json({ error: err.code, message: err.message, quota: err.quota });
@@ -114,8 +166,9 @@ router.get('/:id/print', requireAuth, requireRole('security', 'management'), asy
     expiresAt: pass.expires_at,
   });
   const qrDataUrl = await QRCode.toDataURL(token, { errorCorrectionLevel: 'M', margin: 1, scale: 8 });
+  const shortCode = pass.short_code || barcode.shortCodeForPass(pass.id);
 
-  res.type('html').send(renderPassSheet({ pass, token, qrDataUrl }));
+  res.type('html').send(renderPassSheet({ pass, token, qrDataUrl, shortCode }));
 });
 
 // ---------------------------------------------------------------------------

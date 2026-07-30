@@ -16,7 +16,15 @@ module.exports = {
   databaseUrl: process.env.DATABASE_URL || null,
   jwtSecret: required('JWT_SECRET'),
   barcodeSecret: required('BARCODE_SECRET'),
+  // Secret used to derive the rotating weekly override code. Falls back to the
+  // barcode secret if unset so existing installs keep working.
+  overrideSecret: process.env.OVERRIDE_SECRET || process.env.BARCODE_SECRET,
   annualPassQuota: parseInt(process.env.ANNUAL_PASS_QUOTA || '10', 10),
+  // Commercial units get their own annual quota. -1 means unlimited.
+  commercialPassQuota: parseInt(process.env.COMMERCIAL_PASS_QUOTA || '20', 10),
+  // Hard ceiling on residential units (building has 1520). Commercial units are
+  // tracked separately and do not count against this.
+  residentialUnitCap: parseInt(process.env.RESIDENTIAL_UNIT_CAP || '1520', 10),
   defaultPassDurationHours: parseInt(process.env.DEFAULT_PASS_DURATION_HOURS || '24', 10),
   // Barcode payloads older than the pass expiry are always rejected; this is an
   // additional hard ceiling in case a very long-lived pass is ever created.

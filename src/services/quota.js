@@ -4,10 +4,10 @@ const config = require('./../config');
 // ============================================================================
 //  Annual visitor-pass quota evaluation
 // ----------------------------------------------------------------------------
-//  Business rule: a unit may be issued at most ANNUAL_PASS_QUOTA (default 10)
-//  visitor passes per CALENDAR YEAR. Revoked passes do NOT count against the
-//  quota. Management may grant per-unit, per-year overrides that raise the
-//  effective ceiling.
+//  Business rule: a unit may be issued at most N visitor passes per CALENDAR
+//  YEAR — N = ANNUAL_PASS_QUOTA (10) for residential units, COMMERCIAL_PASS_QUOTA
+//  (20) for commercial units, or unlimited if that value is < 0. Revoked passes
+//  do NOT count. A valid weekly override code adds per-unit, per-year headroom.
 // ============================================================================
 
 /**
@@ -25,7 +25,10 @@ async function evaluateQuota(client, unitId, year) {
   // unit itself. (FOR UPDATE cannot be combined with an aggregate query, so we
   // lock the parent row instead of the counted pass rows — this still forces
   // two simultaneous issue requests for the same unit to run one-at-a-time.)
-  await client.query(`SELECT id FROM units WHERE id = $1 FOR UPDATE`, [unitId]);
+  const unitRes = await client.query(
+    `SELECT kind FROM units WHERE id = $1 FOR UPDATE`, [unitId]
+  );
+  const kind = unitRes.rows[0]?.kind || 'residential';
   const usedRes = await client.query(
     `SELECT COUNT(*)::int AS used
        FROM visitor_passes
@@ -42,10 +45,15 @@ async function evaluateQuota(client, unitId, year) {
   );
   const extra = extraRes.rows[0].extra;
 
-  const base = config.annualPassQuota;
+  const rawBase = kind === 'commercial' ? config.commercialPassQuota : config.annualPassQuota;
+  const unlimited = rawBase < 0;
+  if (unlimited) {
+    return { kind, used, base: null, extra, limit: null, remaining: null, atLimit: false, unlimited: true };
+  }
+  const base = rawBase;
   const limit = base + extra;
   const remaining = Math.max(0, limit - used);
-  return { used, base, extra, limit, remaining, atLimit: used >= limit };
+  return { kind, used, base, extra, limit, remaining, atLimit: used >= limit, unlimited: false };
 }
 
 module.exports = { evaluateQuota };

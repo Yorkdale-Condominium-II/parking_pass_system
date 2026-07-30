@@ -23,6 +23,7 @@ app.use(cookieParser());
 
 // --- API routes ---
 app.use('/api/auth', require('./routes/auth'));
+app.use('/api', require('./routes/meta'));   // /api/units, /api/regions
 app.use('/api/passes', require('./routes/passes'));
 app.use('/api/verify', require('./routes/verify'));
 app.use('/api/admin', require('./routes/admin'));

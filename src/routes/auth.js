@@ -14,6 +14,19 @@ const loginLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Record a sign-in event. Never throws into the request path.
+async function logAuth({ userId, username, event, success, req }) {
+  try {
+    await db.query(
+      `INSERT INTO auth_audit_log (user_id, username, event, success, ip, user_agent)
+       VALUES ($1,$2,$3,$4,$5,$6)`,
+      [userId || null, username || '(unknown)', event, Boolean(success),
+       req.ip || req.socket?.remoteAddress || null,
+       (req.headers['user-agent'] || '').slice(0, 300)]
+    );
+  } catch { /* auditing must not break authentication */ }
+}
+
 router.post('/login', loginLimiter, async (req, res) => {
   const { username, password: pw } = req.body || {};
   if (!username || !pw) {
@@ -29,9 +42,11 @@ router.post('/login', loginLimiter, async (req, res) => {
     ? await password.verify(pw, user.password_hash)
     : await password.verify(pw, '$2a$12$0000000000000000000000000000000000000000000000000000');
   if (!user || !ok) {
+    await logAuth({ userId: user?.id, username, event: 'login_failed', success: false, req });
     return res.status(401).json({ error: 'invalid_credentials' });
   }
 
+  await logAuth({ userId: user.id, username: user.username, event: 'login_success', success: true, req });
   const token = issueSession(user);
   res.cookie('session', token, {
     httpOnly: true,
@@ -45,7 +60,8 @@ router.post('/login', loginLimiter, async (req, res) => {
   });
 });
 
-router.post('/logout', (req, res) => {
+router.post('/logout', requireAuth, async (req, res) => {
+  await logAuth({ userId: req.user.id, username: req.user.username, event: 'logout', success: true, req });
   res.clearCookie('session');
   res.json({ ok: true });
 });

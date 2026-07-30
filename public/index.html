@@ -28,9 +28,15 @@
 
   <!-- Security / Management: Lookup -->
   <section id="view-lookup" class="view" hidden>
-    <h1>Licence Plate Lookup</h1>
+    <h1>Lookup</h1>
     <form id="lookupForm" class="inline">
-      <input name="plate" placeholder="Enter plate, e.g. ABCD123" required>
+      <select name="by" id="lookupBy">
+        <option value="plate">Licence plate</option>
+        <option value="unit">Unit number</option>
+        <option value="name">Name</option>
+        <option value="phone">Phone number</option>
+      </select>
+      <input name="q" id="lookupQ" placeholder="Search…" required>
       <button>Search</button>
     </form>
     <div id="lookupResult"></div>
@@ -40,14 +46,47 @@
   <section id="view-issue" class="view" hidden>
     <h1>Issue Visitor Pass</h1>
     <form id="issueForm" class="card">
-      <label>Unit number <input name="unitNumber" required></label>
-      <label>Visitor plate <input name="visitorPlate" required></label>
-      <label>Visitor name <input name="visitorName"></label>
-      <label>Duration (hours) <input name="durationHours" type="number" value="24" min="1"></label>
-      <label class="check" id="overrideWrap" hidden>
-        <input type="checkbox" name="override"> Override annual quota (Management)
+      <label>Unit number
+        <input name="unitNumber" list="unitList" autocomplete="off" required
+               placeholder="Start typing a unit…">
+        <datalist id="unitList"></datalist>
       </label>
-      <label id="overrideReasonWrap" hidden>Override reason <input name="overrideReason"></label>
+      <small class="hint" id="unitHint"></small>
+
+      <div class="cols">
+        <label>Visitor first name <input name="visitorFirstName"></label>
+        <label>Visitor last name <input name="visitorLastName"></label>
+      </div>
+
+      <div class="cols">
+        <label>Plate country
+          <select name="visitorCountry" id="visitorCountry">
+            <option value="CA">Canada</option>
+            <option value="US">United States</option>
+          </select>
+        </label>
+        <label>Province / State
+          <select name="visitorRegion" id="visitorRegion"></select>
+        </label>
+      </div>
+
+      <label>Visitor plate <input name="visitorPlate" required></label>
+
+      <label>Duration</label>
+      <div class="btn-row" id="durationRow">
+        <button type="button" class="dur active" data-preset="today">Rest of today (until midnight)</button>
+        <button type="button" class="dur" data-preset="tomorrow_noon">Until noon tomorrow</button>
+      </div>
+      <input type="hidden" name="durationPreset" id="durationPreset" value="today">
+
+      <label class="check" id="overrideWrap">
+        <input type="checkbox" name="override" id="overrideChk"> Quota override (requires this week's code)
+      </label>
+      <div id="overrideFields" hidden>
+        <label>Weekly override code <input name="overrideCode" placeholder="XXXX-XXXX"></label>
+        <label>Override reason <input name="overrideReason"></label>
+      </div>
+
       <button type="submit">Issue pass</button>
       <p class="error" id="issueError"></p>
     </form>
@@ -57,12 +96,31 @@
   <!-- Security / Management: Verify -->
   <section id="view-verify" class="view" hidden>
     <h1>Verify Pass</h1>
-    <form id="verifyForm" class="card">
-      <label>Scan or paste barcode token
-        <textarea name="token" rows="3" placeholder="PPV1...." required></textarea>
-      </label>
-      <button type="submit">Verify</button>
-    </form>
+    <div class="card">
+      <h2>Scan QR with camera</h2>
+      <p class="hint">Camera works on this device at <code>localhost</code> or over HTTPS. On a plain-HTTP network connection, use the printed code below instead.</p>
+      <div class="btn-row">
+        <button type="button" id="scanStart">Start camera</button>
+        <button type="button" id="scanStop" hidden>Stop camera</button>
+      </div>
+      <video id="scanVideo" playsinline hidden></video>
+      <canvas id="scanCanvas" hidden></canvas>
+      <p class="msg" id="scanStatus"></p>
+    </div>
+    <div class="card">
+      <h2>Or enter the printed code</h2>
+      <form id="shortForm" class="inline">
+        <input name="shortCode" placeholder="e.g. K7Q4-9M2X" autocomplete="off">
+        <button>Verify code</button>
+      </form>
+    </div>
+    <details class="card">
+      <summary>Paste full token (advanced)</summary>
+      <form id="verifyForm">
+        <textarea name="token" rows="3" placeholder="PPV1…."></textarea>
+        <button type="submit">Verify token</button>
+      </form>
+    </details>
     <div id="verifyResult"></div>
   </section>
 
@@ -83,15 +141,33 @@
       </form>
       <form id="unitForm" class="card">
         <h2>Add unit</h2>
+        <label>Type
+          <select name="kind" id="unitKind"><option value="residential">Residential</option><option value="commercial">Commercial</option></select>
+        </label>
         <label>Unit number <input name="unitNumber" required></label>
         <label>Floor <input name="floor" type="number"></label>
+        <div id="commercialFields" hidden>
+          <label>Business name <input name="businessName"></label>
+          <label>Business contact <input name="businessContact"></label>
+        </div>
         <button>Add unit</button>
         <p class="msg" id="unitMsg"></p>
       </form>
     </div>
-    <h2>Audit log</h2>
+
+    <div class="card" id="overrideCodeCard">
+      <h2>This week's override code</h2>
+      <p class="hint">Share with staff only to authorize a quota override. Rotates automatically each week.</p>
+      <div id="overrideCodeBox">…</div>
+    </div>
+
+    <h2>Pass audit log</h2>
     <button id="refreshAudit">Refresh</button>
     <div id="auditTable"></div>
+
+    <h2>Sign-in audit log</h2>
+    <button id="refreshAuthAudit">Refresh</button>
+    <div id="authAuditTable"></div>
   </section>
 
   <!-- Board: Dashboard -->
@@ -101,6 +177,7 @@
   </section>
 </main>
 
+<script src="/vendor/jsQR.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>

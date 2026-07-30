@@ -20,9 +20,12 @@ function fmt(dt) {
   });
 }
 
-function renderPassSheet({ pass, token, qrDataUrl }) {
+function renderPassSheet({ pass, token, qrDataUrl, shortCode }) {
   const roleLabel = { security: 'Security', management: 'Management', board: 'Board' }[pass.issuer_role]
     || pass.issuer_role;
+  const plateLine = pass.visitor_region
+    ? `${pass.visitor_plate} (${pass.visitor_region.replace('-', ' ')})`
+    : pass.visitor_plate;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -76,6 +79,7 @@ function renderPassSheet({ pass, token, qrDataUrl }) {
 
   .barcode { text-align: center; margin-top: auto; padding-top: 18px; border-top: 2px dashed #b7c0ca; }
   .barcode img { width: 2.4in; height: 2.4in; }
+  .barcode .shortcode { font-size: 22px; letter-spacing: 3px; margin-top: 8px; font-family: "Courier New", monospace; }
   .barcode .token { font-family: "Courier New", monospace; font-size: 9px; color: #8b95a1; word-break: break-all; margin-top: 8px; max-width: 6in; margin-left: auto; margin-right: auto; }
   .barcode .note { font-size: 12px; color: #55606c; margin-top: 6px; }
 
@@ -105,7 +109,7 @@ function renderPassSheet({ pass, token, qrDataUrl }) {
     <div class="grid">
       <div class="field">
         <div class="lbl">Visitor Licence Plate</div>
-        <div class="val">${esc(pass.visitor_plate)}</div>
+        <div class="val">${esc(plateLine)}</div>
       </div>
       <div class="field">
         <div class="lbl">Visitor Name</div>
@@ -127,7 +131,8 @@ function renderPassSheet({ pass, token, qrDataUrl }) {
 
     <div class="barcode">
       <img src="${qrDataUrl}" alt="Verification QR code">
-      <div class="note">Security: scan to verify authenticity. This code is cryptographically signed and cannot be duplicated or altered.</div>
+      <div class="shortcode">Verification code: <b>${esc(shortCode || '')}</b></div>
+      <div class="note">Security: scan the QR to verify, or key in the verification code above. This pass is cryptographically signed and cannot be duplicated or altered.</div>
       <div class="token">${esc(token)}</div>
     </div>
 

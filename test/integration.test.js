@@ -55,7 +55,7 @@ test.before(async () => {
   const schema = fs.readFileSync(path.join(__dirname, '..', 'db', 'schema.sql'), 'utf8');
   await db.query(schema);
   await db.query(
-    `TRUNCATE pass_audit_log, override_grants, visitor_passes,
+    `TRUNCATE auth_audit_log, pass_audit_log, override_grants, visitor_passes,
               registered_vehicles, residents, units, users RESTART IDENTITY CASCADE`
   );
 
@@ -74,11 +74,19 @@ test.before(async () => {
   for (const un of ['1204', '0805']) {
     await db.query(`INSERT INTO units (unit_number) VALUES ($1)`, [un]);
   }
-  const unit = await db.query(`SELECT id FROM units WHERE unit_number = '1204'`);
   await db.query(
-    `INSERT INTO registered_vehicles (unit_id, licence_plate, province, make, model, color)
-     VALUES ($1, 'ABCD123', 'ON', 'Toyota', 'Corolla', 'Silver')`,
+    `INSERT INTO units (unit_number, kind, business_name) VALUES ('C-101','commercial','Corner Cafe Ltd.')`
+  );
+  const unit = await db.query(`SELECT id FROM units WHERE unit_number = '1204'`);
+  const resident = await db.query(
+    `INSERT INTO residents (unit_id, full_name, email, phone, is_primary)
+     VALUES ($1, 'Dana Resident', 'dana@example.com', '416-555-0142', TRUE) RETURNING id`,
     [unit.rows[0].id]
+  );
+  await db.query(
+    `INSERT INTO registered_vehicles (unit_id, resident_id, licence_plate, province, make, model, color)
+     VALUES ($1, $2, 'ABCD123', 'ON', 'Toyota', 'Corolla', 'Silver')`,
+    [unit.rows[0].id, resident.rows[0].id]
   );
 
   await new Promise((resolve) => {
@@ -108,10 +116,34 @@ test('security can log in and look up a registered plate', async () => {
   assert.equal(login.status, 200);
   assert.equal(login.body.user.role, 'security');
 
-  const look = await c('GET', '/api/passes/lookup?plate=abcd123'); // lower-case on purpose
+  const look = await c('GET', '/api/passes/lookup?by=plate&q=abcd123'); // lower-case on purpose
   assert.equal(look.status, 200);
   assert.equal(look.body.registeredVehicles.length, 1);
   assert.equal(look.body.registeredVehicles[0].unit_number, '1204');
+});
+
+test('lookup by name and by phone finds the resident vehicle', async () => {
+  const c = makeClient();
+  await c('POST', '/api/auth/login', { username: 'security1', password: 'changeme123' });
+
+  const byName = await c('GET', '/api/passes/lookup?by=name&q=dana');
+  assert.equal(byName.status, 200);
+  assert.ok(byName.body.registeredVehicles.some((v) => v.resident_name === 'Dana Resident'));
+
+  const byPhone = await c('GET', '/api/passes/lookup?by=phone&q=5550142');
+  assert.equal(byPhone.status, 200);
+  assert.ok(byPhone.body.registeredVehicles.some((v) => v.licence_plate === 'ABCD123'));
+});
+
+test('the units endpoint lists known units and rejects unknown ones at issue', async () => {
+  const c = makeClient();
+  await c('POST', '/api/auth/login', { username: 'security1', password: 'changeme123' });
+  const units = await c('GET', '/api/units');
+  assert.ok(units.body.some((u) => u.unit_number === '1204'));
+
+  const bad = await c('POST', '/api/passes', { unitNumber: 'NOPE-999', visitorPlate: 'ZZ1' });
+  assert.equal(bad.status, 404);
+  assert.equal(bad.body.error, 'unit_not_found');
 });
 
 test('issuing normalizes the plate and returns a signed token', async () => {
@@ -124,6 +156,49 @@ test('issuing normalizes the plate and returns a signed token', async () => {
   assert.equal(res.body.visitorPlate, 'VIS999');           // normalized
   assert.ok(res.body.token.startsWith('PPV1.'));           // signed token shape
   assert.equal(barcode.verifyToken(res.body.token).valid, true);
+  assert.match(res.body.shortCode, /^[0-9A-Z]{4}-[0-9A-Z]{4}$/); // printed short code
+});
+
+test('issue accepts split name + region and rejects an invalid region', async () => {
+  const c = makeClient();
+  await c('POST', '/api/auth/login', { username: 'security1', password: 'changeme123' });
+
+  const ok = await c('POST', '/api/passes', {
+    unitNumber: '1204', visitorPlate: 'RGN100', visitorFirstName: 'Pat', visitorLastName: 'Lee',
+    visitorCountry: 'CA', visitorRegion: 'ON',
+  });
+  assert.equal(ok.status, 201);
+  assert.equal(ok.body.visitorName, 'Pat Lee');
+
+  const bad = await c('POST', '/api/passes', {
+    unitNumber: '1204', visitorPlate: 'RGN101', visitorCountry: 'CA', visitorRegion: 'ZZ',
+  });
+  assert.equal(bad.status, 400);
+  assert.equal(bad.body.error, 'invalid_region');
+});
+
+test('duration presets set the right expiry (today vs tomorrow noon)', async () => {
+  const c = makeClient();
+  await c('POST', '/api/auth/login', { username: 'security1', password: 'changeme123' });
+
+  const today = await c('POST', '/api/passes', { unitNumber: '1204', visitorPlate: 'DUR1', durationPreset: 'today' });
+  const exp = new Date(today.body.expiresAt);
+  assert.equal(exp.getHours(), 23); // end of the current local day
+
+  const noon = await c('POST', '/api/passes', { unitNumber: '1204', visitorPlate: 'DUR2', durationPreset: 'tomorrow_noon' });
+  assert.equal(new Date(noon.body.expiresAt).getHours(), 12);
+});
+
+test('a pass verifies by its printed short code', async () => {
+  const c = makeClient();
+  await c('POST', '/api/auth/login', { username: 'security1', password: 'changeme123' });
+  const issued = await c('POST', '/api/passes', { unitNumber: '1204', visitorPlate: 'SHRT1' });
+  const byCode = await c('POST', '/api/verify', { shortCode: issued.body.shortCode });
+  assert.equal(byCode.body.verdict, 'VALID');
+  assert.equal(byCode.body.pass.visitor_plate, 'SHRT1');
+
+  const bogus = await c('POST', '/api/verify', { shortCode: 'ZZZZ-ZZZZ' });
+  assert.equal(bogus.body.verdict, 'INVALID');
 });
 
 test('verify distinguishes genuine, forged, and revoked passes', async () => {
@@ -184,29 +259,68 @@ test('enforces the 10-pass annual quota and blocks the 11th', async () => {
   assert.equal(blocked.body.quota.used, 10);
 });
 
-test('security cannot override, management can', async () => {
+test('override requires the current weekly code and a reason', async () => {
   const sec = makeClient();
   await sec('POST', '/api/auth/login', { username: 'security1', password: 'changeme123' });
+
+  // Wrong/absent code is rejected even though we are at the limit.
   const denied = await sec('POST', '/api/passes', {
-    unitNumber: '0805', visitorPlate: 'OVR1', override: true, overrideReason: 'nope',
+    unitNumber: '0805', visitorPlate: 'OVR1', override: true,
+    overrideCode: 'WRNG-CODE', overrideReason: 'nope',
   });
   assert.equal(denied.status, 403);
-  assert.equal(denied.body.error, 'override_not_authorized');
+  assert.equal(denied.body.error, 'override_code_invalid');
 
-  const mgr = makeClient();
-  await mgr('POST', '/api/auth/login', { username: 'manager1', password: 'changeme123' });
-  const ok = await mgr('POST', '/api/passes', {
-    unitNumber: '0805', visitorPlate: 'OVR1', override: true, overrideReason: 'Board-approved overflow',
+  // The real weekly code (derived the same way the server does) works.
+  const code = barcode.overrideCodeForWeek().code;
+  const ok = await sec('POST', '/api/passes', {
+    unitNumber: '0805', visitorPlate: 'OVR1', override: true,
+    overrideCode: code, overrideReason: 'Board-approved overflow',
   });
   assert.equal(ok.status, 201);
   assert.equal(ok.body.usedOverride, true);
 
-  // Management override without a reason is rejected.
-  const noReason = await mgr('POST', '/api/passes', {
-    unitNumber: '0805', visitorPlate: 'OVR2', override: true,
+  // Valid code but no reason is rejected.
+  const noReason = await sec('POST', '/api/passes', {
+    unitNumber: '0805', visitorPlate: 'OVR2', override: true, overrideCode: code,
   });
   assert.equal(noReason.status, 400);
   assert.equal(noReason.body.error, 'override_reason_required');
+});
+
+test('commercial units get the higher (20) annual quota', async () => {
+  const c = makeClient();
+  await c('POST', '/api/auth/login', { username: 'security1', password: 'changeme123' });
+  for (let i = 0; i < 20; i++) {
+    const r = await c('POST', '/api/passes', { unitNumber: 'C-101', visitorPlate: 'K' + i });
+    assert.equal(r.status, 201, `commercial pass #${i + 1} should succeed`);
+    assert.equal(r.body.kind, 'commercial');
+  }
+  const blocked = await c('POST', '/api/passes', { unitNumber: 'C-101', visitorPlate: 'K20' });
+  assert.equal(blocked.status, 409);
+  assert.equal(blocked.body.quota.limit, 20);
+});
+
+test('the current weekly override code is viewable by management', async () => {
+  const mgr = makeClient();
+  await mgr('POST', '/api/auth/login', { username: 'manager1', password: 'changeme123' });
+  const r = await mgr('GET', '/api/admin/override-code');
+  assert.equal(r.status, 200);
+  assert.match(r.body.current.code, /^[0-9A-Z]{4}-[0-9A-Z]{4}$/);
+  assert.equal(r.body.current.code, barcode.overrideCodeForWeek().code);
+});
+
+test('sign-ins are recorded in the auth audit log', async () => {
+  const mgr = makeClient();
+  await mgr('POST', '/api/auth/login', { username: 'manager1', password: 'changeme123' });
+  // Generate a failed attempt too.
+  const anon = makeClient();
+  await anon('POST', '/api/auth/login', { username: 'security1', password: 'WRONG' });
+
+  const log = await mgr('GET', '/api/admin/auth-audit?limit=100');
+  assert.equal(log.status, 200);
+  assert.ok(log.body.some((r) => r.event === 'login_success'));
+  assert.ok(log.body.some((r) => r.event === 'login_failed' && r.success === false));
 });
 
 test('board sees aggregates but is denied resident/plate data', async () => {
