@@ -487,8 +487,17 @@ $('#usersTable').addEventListener('click', async (e) => {
         await api(`/admin/users/${id}`, { method: 'DELETE' });
         loadUsers();
       } catch (err) {
+        if (err.data?.error === 'user_has_history') {
+          // Offer to delete anyway, reassigning the account's records to the admin.
+          if (confirm(`${name} has activity history (issued passes, audit records).\n\nDelete anyway? Those records will be kept but reassigned to you. This cannot be undone.`)) {
+            try {
+              await api(`/admin/users/${id}?force=true`, { method: 'DELETE' });
+              loadUsers();
+            } catch (e2) { alert(e2.message); }
+          }
+          return;
+        }
         const map = {
-          user_has_history: 'This account has activity history (issued passes, audit records) and can’t be deleted. Disable it instead.',
           cannot_delete_self: 'You can’t delete your own account.',
           superuser_required: 'Only a superuser can delete accounts.',
         };

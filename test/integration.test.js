@@ -981,6 +981,15 @@ test('manage users: delete removes a clean account but protects one with history
   assert.equal(protectedDel.status, 409);
   assert.equal(protectedDel.body.error, 'user_has_history');
 
+  // ...but a forced delete succeeds, detaching the audit row (actor set NULL).
+  const forced = await sup('DELETE', `/api/admin/users/${hist.rows[0].id}?force=true`);
+  assert.equal(forced.status, 200);
+  assert.equal(forced.body.reassigned, true);
+  const orphan = await db.query(`SELECT actor_id FROM pass_audit_log WHERE action = 'issued' AND actor_id IS NULL`);
+  assert.ok(orphan.rowCount >= 1, 'the audit row should survive with a null actor');
+  const gone = await sup('GET', '/api/admin/users');
+  assert.ok(!gone.body.some((u) => u.username === 'hist_user'));
+
   // A non-superuser manager cannot delete accounts at all.
   await db.query(
     `INSERT INTO users (username, full_name, role, password_hash, is_superuser)

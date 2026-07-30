@@ -124,10 +124,25 @@ router.delete('/users/:id', async (req, res) => {
   const me = await db.query(`SELECT is_superuser FROM users WHERE id = $1`, [req.user.id]);
   if (!me.rows[0]?.is_superuser) return res.status(403).json({ error: 'superuser_required' });
   if (req.params.id === req.user.id) return res.status(400).json({ error: 'cannot_delete_self' });
+  const target = req.params.id;
+  // "force" deletes even an account with history: its records are kept but
+  // reassigned to the deleting admin (issued passes, overrides) or detached
+  // (revoked/vacated/decided/audit actor), so nothing in the trail is lost.
+  const force = req.query.force === 'true' || (req.body && req.body.force === true);
   try {
-    const r = await db.query(`DELETE FROM users WHERE id = $1 RETURNING username`, [req.params.id]);
-    if (r.rowCount === 0) return res.status(404).json({ error: 'user_not_found' });
-    res.json({ ok: true, deleted: r.rows[0].username });
+    const deleted = await db.withTransaction(async (client) => {
+      if (force) {
+        await client.query(`UPDATE visitor_passes SET issued_by = $1 WHERE issued_by = $2`, [req.user.id, target]);
+        await client.query(`UPDATE override_grants SET granted_by = $1 WHERE granted_by = $2`, [req.user.id, target]);
+        await client.query(`UPDATE visitor_passes SET revoked_by = NULL WHERE revoked_by = $1`, [target]);
+        await client.query(`UPDATE visitor_passes SET vacated_by = NULL WHERE vacated_by = $1`, [target]);
+        await client.query(`UPDATE pass_requests SET decided_by = NULL WHERE decided_by = $1`, [target]);
+        await client.query(`UPDATE pass_audit_log SET actor_id = NULL WHERE actor_id = $1`, [target]);
+      }
+      return client.query(`DELETE FROM users WHERE id = $1 RETURNING username`, [target]);
+    });
+    if (deleted.rowCount === 0) return res.status(404).json({ error: 'user_not_found' });
+    res.json({ ok: true, deleted: deleted.rows[0].username, reassigned: force });
   } catch (err) {
     if (err.code === '23503') return res.status(409).json({ error: 'user_has_history' });
     throw err;
