@@ -43,16 +43,28 @@ if errorlevel 1 (
 )
 
 echo.
-echo Starting server... a browser tab will open at http://localhost:3000
-echo   To STOP the server: press Ctrl+C, or just close this window.
-echo.
+echo Starting server in the background...
 
-REM Open the browser (a refresh may be needed if it beats the server by a second).
+REM --- Launch the server as an independent, hidden background process --------
+REM Start-Process detaches it from this window, so the server keeps running
+REM after this launcher closes. Output goes to server.log / server.err.log.
+powershell -NoProfile -Command "Start-Process -FilePath 'npm.cmd' -ArgumentList 'start' -WorkingDirectory '%~dp0' -WindowStyle Hidden -RedirectStandardOutput '%~dp0server.log' -RedirectStandardError '%~dp0server.err.log'"
+
+REM --- Wait until the server actually answers (up to ~40s) -------------------
+echo Waiting for the server to be ready...
+powershell -NoProfile -Command "for($i=0;$i -lt 40;$i++){ try{ if((Invoke-WebRequest -UseBasicParsing -TimeoutSec 2 'http://localhost:3000/api/health').StatusCode -eq 200){ exit 0 } }catch{}; Start-Sleep -Seconds 1 }; exit 1"
+if errorlevel 1 (
+  echo.
+  echo [warning] The server did not respond in time. It may still be starting.
+  echo           Check server.err.log in this folder if the page does not load.
+  echo.
+)
+
+REM --- Open the browser, then close this launcher window ---------------------
 start "" http://localhost:3000
-
-REM Run the server in this window (blocks until you stop it).
-call npm start
-
 echo.
-echo Server stopped. Press any key to close this window.
-pause >nul
+echo The app is running at http://localhost:3000
+echo   To STOP the server later, double-click stop.bat in this folder.
+
+REM Close this window now that the app is up and open in the browser.
+exit

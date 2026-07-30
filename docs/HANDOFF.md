@@ -15,7 +15,7 @@ A continuation guide for picking this project back up in a new session.
 it, `GET /api/settings` returns it (public), and the SPA shows it as a `vX.Y.Z`
 badge in the top-bar header and in the browser tab title. **Bump `package.json`
 with every committed change** so the running build is identifiable at a glance
-(semver: patch for fixes, minor for features). Current: **1.4.0**.
+(semver: patch for fixes, minor for features). Current: **1.4.1**.
 
 ---
 
@@ -87,8 +87,12 @@ These are built but inert until configured in `.env` (see `.env.example`):
 
 ## 3. Run it on the user's PC (Windows)
 
-Double-click **`start.bat`** (auto: git pull → npm install → migrate → start →
-open browser). First time only, pull manually:
+Double-click **`start.bat`** (auto: git pull → npm install → migrate → launch
+the server **hidden in the background** → wait until it responds → open the
+browser → **the launcher window closes itself**). The server keeps running after
+the window closes; its output goes to `server.log` / `server.err.log`. To stop
+it, double-click **`stop.bat`** (frees whatever is listening on port 3000).
+First time only, pull manually:
 ```
 cd %USERPROFILE%\Desktop\parking_pass_system
 git checkout -- package-lock.json
