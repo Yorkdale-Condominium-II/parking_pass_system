@@ -110,10 +110,13 @@ npm start           # http://localhost:3000
 
 ### One-click launch on Windows
 
-After the one-time setup (install deps, create the database, `.env`, migrate,
-seed), you can start the app by **double-clicking `start.bat`**. It changes into
-the project folder, starts the server, and opens `http://localhost:3000` in your
-browser. Close the window or press `Ctrl+C` to stop.
+After the one-time setup (create the database, `.env`, seed), start the app by
+**double-clicking `start.bat`**. On each launch it pulls the latest code
+(discarding only the auto-generated `package-lock.json` so the pull is never
+blocked), runs `npm install` and the idempotent DB migration, then starts the
+server and opens `http://localhost:3000`. Git/DB steps are best-effort — if the
+machine is offline or Postgres is momentarily down, it warns and still starts
+with the current code. Close the window or press `Ctrl+C` to stop.
 
 ### Access from other machines on the LAN
 
