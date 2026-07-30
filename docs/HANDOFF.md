@@ -5,7 +5,7 @@ A continuation guide for picking this project back up in a new session.
 - **Repo:** `Yorkdale-Condominium-II/parking_pass_system`
 - **Working branch:** `claude/condo-property-management-8f0seo`
 - **Latest commit at handoff:** `ae68cd9`
-- **Tests:** `npm test` → 34 integration cases, all passing (needs a Postgres test DB).
+- **Tests:** `npm test` → 42 integration cases, all passing (needs a Postgres test DB).
 
 ---
 
@@ -15,7 +15,7 @@ A continuation guide for picking this project back up in a new session.
 it, `GET /api/settings` returns it (public), and the SPA shows it as a `vX.Y.Z`
 badge in the top-bar header and in the browser tab title. **Bump `package.json`
 with every committed change** so the running build is identifiable at a glance
-(semver: patch for fixes, minor for features). Current: **1.12.0**.
+(semver: patch for fixes, minor for features). Current: **1.12.1**.
 
 ---
 
@@ -120,7 +120,7 @@ Optional: run `create-desktop-shortcut.bat` once for a Desktop icon.
 
 Requirements: Node 18+, PostgreSQL 16 (service running), a `.env` with
 `DATABASE_URL`, `JWT_SECRET`, `BARCODE_SECRET` (and optionally the items in §2).
-Seeded demo logins (dev only): `security1` / `manager1` / `board1`, pw
+Seeded demo logins (dev only): `security1` / `manager1`, pw
 `changeme123`. URLs: app `/`, desk `/desk.html`, resident `/resident.html`.
 
 ## 4. Dev / test in a fresh cloud session
@@ -129,7 +129,7 @@ Seeded demo logins (dev only): `security1` / `manager1` / `board1`, pw
 npm install
 # point at a THROWAWAY test DB (the suite truncates tables):
 export TEST_DATABASE_URL='postgres://.../parking_pass_test'
-npm test          # expect 32 passing
+npm test          # expect 42 passing
 ```
 The schema is one idempotent file (`db/schema.sql`) with additive v2–v9
 migration blocks; `npm run migrate` re-applies safely.
@@ -147,7 +147,7 @@ src/routes/              auth, sso, meta, settings, passes, verify, admin, board
                          resident, requests, spots, desk
 public/                  index.html + app.js (SPA), desk.html/js, resident.html/js, styles.css
 db/schema.sql            schema + v2..v9 idempotent migrations
-test/integration.test.js 32 end-to-end cases (node:test)
+test/integration.test.js 42 end-to-end cases (node:test)
 ```
 
 ## 6. Deferred ideas / possible next steps
