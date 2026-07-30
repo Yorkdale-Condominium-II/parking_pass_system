@@ -90,6 +90,27 @@ $('#loginForm').onsubmit = async (e) => {
 };
 $('#logoutBtn').onclick = async () => { try { await api('/auth/logout', { method: 'POST' }); } catch {} location.reload(); };
 
+// SSO buttons + callback error messages on the login screen.
+const SSO_ERRORS = {
+  not_provisioned: 'That account isn’t set up here yet. Ask a manager to add your email.',
+  email_unverified: 'Your email isn’t verified with the provider.',
+  expired: 'The sign-in took too long — please try again.',
+  exchange_failed: 'Sign-in failed. Please try again.',
+};
+async function initSso() {
+  const params = new URLSearchParams(location.search);
+  if (params.get('sso_error')) {
+    $('#loginError').textContent = SSO_ERRORS[params.get('sso_error')] || 'Sign-in was not completed.';
+    history.replaceState({}, '', location.pathname);
+  }
+  try {
+    const { sso } = await api('/auth/providers');
+    const labels = { google: 'Sign in with Google', microsoft: 'Sign in with Microsoft' };
+    $('#ssoButtons').innerHTML = (sso || []).map((p) =>
+      `<a href="/api/auth/sso/${p}/start"><button type="button">${labels[p] || p}</button></a>`).join('');
+  } catch {}
+}
+
 // --- Reference data ---
 async function loadRegions() {
   if (regionData) return;
@@ -284,7 +305,7 @@ $('#userForm').onsubmit = async (e) => {
   e.preventDefault();
   const f = new FormData(e.target);
   try {
-    await api('/admin/users', { method: 'POST', body: { username: f.get('username'), firstName: f.get('firstName'), lastName: f.get('lastName'), role: f.get('role'), password: f.get('password') } });
+    await api('/admin/users', { method: 'POST', body: { username: f.get('username'), firstName: f.get('firstName'), lastName: f.get('lastName'), email: f.get('email'), role: f.get('role'), password: f.get('password') } });
     $('#userMsg').textContent = 'User created.'; e.target.reset(); loadUsers();
   } catch (err) { $('#userMsg').textContent = err.message; }
 };
@@ -305,14 +326,16 @@ $('#settingsForm').onsubmit = async (e) => {
 $('#refreshUsers').onclick = loadUsers;
 async function loadUsers() {
   const rows = await api('/admin/users');
-  $('#usersTable').innerHTML = `<table><tr><th>Name</th><th>Username</th><th>Role</th><th>Status</th><th>Actions</th></tr>` +
+  $('#usersTable').innerHTML = `<table><tr><th>Name</th><th>Username</th><th>Email (SSO)</th><th>Role</th><th>Status</th><th>Actions</th></tr>` +
     rows.map((u) => `<tr>
       <td>${u.first_name || ''} ${u.last_name || ''}</td>
       <td>${u.username}</td>
+      <td>${u.email || '—'}</td>
       <td>${u.role}</td>
       <td>${u.is_active ? 'Active' : '<span style="color:#b3261e">Disabled</span>'}</td>
       <td>
         <button type="button" data-uact="history" data-id="${u.id}" data-name="${u.first_name} ${u.last_name}">History</button>
+        <button type="button" data-uact="email" data-id="${u.id}" data-email="${u.email || ''}">Set email</button>
         <button type="button" data-uact="toggle" data-id="${u.id}" data-active="${u.is_active}">${u.is_active ? 'Disable' : 'Enable'}</button>
         <button type="button" data-uact="resetpw" data-id="${u.id}">Reset pw</button>
       </td></tr>`).join('') + `</table>`;
@@ -329,6 +352,11 @@ $('#usersTable').addEventListener('click', async (e) => {
       if (!pw) return;
       await api(`/admin/users/${id}/reset-password`, { method: 'POST', body: { password: pw } });
       alert('Password reset.');
+    } else if (btn.dataset.uact === 'email') {
+      const email = prompt('Email for Google/Microsoft sign-in (blank to clear):', btn.dataset.email);
+      if (email === null) return;
+      await api(`/admin/users/${id}`, { method: 'PATCH', body: { email } });
+      loadUsers();
     } else if (btn.dataset.uact === 'history') {
       const h = await api(`/admin/users/${id}/history`);
       const s = h.summary;
@@ -561,5 +589,5 @@ async function loadBoard() {
   try {
     const { user } = await api('/auth/me');
     await enterApp(user);
-  } catch { $('#view-login').hidden = false; }
+  } catch { $('#view-login').hidden = false; initSso(); }
 })();

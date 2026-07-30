@@ -27,7 +27,7 @@ router.use(requireAuth, requireRole('management'));
 
 // --- User account creation -------------------------------------------------
 router.post('/users', async (req, res) => {
-  const { username, firstName, lastName, role, password: pw } = req.body || {};
+  const { username, firstName, lastName, role, email, password: pw } = req.body || {};
   if (!username || !firstName || !lastName || !role || !pw) {
     return res.status(400).json({ error: 'missing_fields' });
   }
@@ -38,20 +38,23 @@ router.post('/users', async (req, res) => {
   const hash = await password.hash(pw);
   try {
     const r = await db.query(
-      `INSERT INTO users (username, first_name, last_name, full_name, role, password_hash)
-       VALUES ($1,$2,$3,$4,$5,$6) RETURNING id, username, first_name, last_name, full_name, role`,
-      [username, firstName.trim(), lastName.trim(), fullName, role, hash]
+      `INSERT INTO users (username, first_name, last_name, full_name, role, email, password_hash)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id, username, first_name, last_name, full_name, role, email`,
+      [username, firstName.trim(), lastName.trim(), fullName, role, (email || '').trim() || null, hash]
     );
     res.status(201).json(r.rows[0]);
   } catch (err) {
-    if (err.code === '23505') return res.status(409).json({ error: 'username_taken' });
+    if (err.code === '23505') {
+      // Could be username OR email uniqueness.
+      return res.status(409).json({ error: 'username_or_email_taken' });
+    }
     throw err;
   }
 });
 
 router.get('/users', async (req, res) => {
   const r = await db.query(
-    `SELECT id, username, first_name, last_name, full_name, role, is_active, created_at
+    `SELECT id, username, first_name, last_name, full_name, role, email, is_active, created_at
        FROM users ORDER BY role, full_name`
   );
   res.json(r.rows);
@@ -59,7 +62,7 @@ router.get('/users', async (req, res) => {
 
 // Update a user: names, role, or active state.
 router.patch('/users/:id', async (req, res) => {
-  const { firstName, lastName, role, isActive } = req.body || {};
+  const { firstName, lastName, role, email, isActive } = req.body || {};
   if (role && !['security', 'management', 'board'].includes(role)) {
     return res.status(400).json({ error: 'invalid_role' });
   }
@@ -69,13 +72,20 @@ router.patch('/users/:id', async (req, res) => {
   if (firstName !== undefined) add('first_name', firstName.trim());
   if (lastName !== undefined) add('last_name', lastName.trim());
   if (role !== undefined) add('role', role);
+  if (email !== undefined) add('email', (email || '').trim() || null);
   if (typeof isActive === 'boolean') add('is_active', isActive);
   if (!sets.length) return res.status(400).json({ error: 'nothing_to_update' });
   params.push(req.params.id);
-  const r = await db.query(
-    `UPDATE users SET ${sets.join(', ')}, updated_at = now() WHERE id = $${params.length} RETURNING id`,
-    params
-  );
+  let r;
+  try {
+    r = await db.query(
+      `UPDATE users SET ${sets.join(', ')}, updated_at = now() WHERE id = $${params.length} RETURNING id`,
+      params
+    );
+  } catch (err) {
+    if (err.code === '23505') return res.status(409).json({ error: 'email_taken' });
+    throw err;
+  }
   if (r.rowCount === 0) return res.status(404).json({ error: 'user_not_found' });
   // Keep full_name derived from first/last.
   const out = await db.query(

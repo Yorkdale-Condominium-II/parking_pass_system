@@ -311,3 +311,15 @@ CREATE TABLE IF NOT EXISTS settings (
 INSERT INTO settings (key, value) VALUES ('org_name', 'Yorkdale Condominium II')
   ON CONFLICT (key) DO NOTHING;
 COMMIT;
+
+-- ============================================================================
+--  v8 migration — email + SSO identity on users (for Google/Microsoft login).
+-- ============================================================================
+BEGIN;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email        TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS sso_provider TEXT;  -- 'google' | 'microsoft'
+ALTER TABLE users ADD COLUMN IF NOT EXISTS sso_subject  TEXT;  -- provider 'sub' claim
+-- Email is matched case-insensitively during SSO, so enforce uniqueness on lower().
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_lower
+  ON users (lower(email)) WHERE email IS NOT NULL;
+COMMIT;

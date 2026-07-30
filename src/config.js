@@ -29,6 +29,19 @@ module.exports = {
   // "live" (occupying a spot) at any instant, building-wide.
   spotCapacity: parseInt(process.env.SPOT_CAPACITY || '5', 10),
   defaultPassDurationHours: parseInt(process.env.DEFAULT_PASS_DURATION_HOURS || '24', 10),
+  // Base URL the app is reached at, used to build OAuth redirect URIs.
+  oauthBaseUrl: (process.env.OAUTH_BASE_URL || `http://localhost:${process.env.PORT || '3000'}`).replace(/\/$/, ''),
+  sso: {
+    google: {
+      clientId: process.env.GOOGLE_CLIENT_ID || null,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET || null,
+    },
+    microsoft: {
+      clientId: process.env.MICROSOFT_CLIENT_ID || null,
+      clientSecret: process.env.MICROSOFT_CLIENT_SECRET || null,
+      tenant: process.env.MICROSOFT_TENANT || 'common',
+    },
+  },
   // Barcode payloads older than the pass expiry are always rejected; this is an
   // additional hard ceiling in case a very long-lived pass is ever created.
   jwtIssuer: 'condo-parking-pass',

@@ -154,6 +154,18 @@ resident can check status any time at the bottom of the portal by entering it
 request emails them the pass with a **printable PDF attached** (requires SMTP —
 see `.env.example`; without it, approval still works and the email is skipped).
 
+### Google / Microsoft sign-in (SSO)
+
+Optional. When `GOOGLE_CLIENT_*` and/or `MICROSOFT_CLIENT_*` are configured (see
+`.env.example`), the login page shows "Sign in with Google/Microsoft" buttons
+(OpenID Connect, Authorization Code + PKCE). SSO only **authenticates** — it
+proves the person's verified email; **authorization** still comes from the
+users table. The email must match an **active** user (set the email under
+Yorkdale Manager → Manage users), and that row's role is granted. Unprovisioned
+emails are refused (`?sso_error=not_provisioned`). Register the OAuth apps with
+redirect URI `<OAUTH_BASE_URL>/api/auth/sso/<google|microsoft>/callback`.
+Password login keeps working alongside SSO.
+
 ### Open Desk kiosk (no login)
 
 `public/desk.html` (served at `/desk.html`, linked from the login page) is a

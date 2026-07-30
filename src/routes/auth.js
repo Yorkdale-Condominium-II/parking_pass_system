@@ -71,4 +71,10 @@ router.get('/me', requireAuth, (req, res) => {
   res.json({ user: req.user });
 });
 
+// Which SSO providers are configured (drives the login-page buttons).
+router.get('/providers', (req, res) => {
+  const sso = require('./../auth/sso');
+  res.json({ sso: sso.enabledProviders() });
+});
+
 module.exports = router;

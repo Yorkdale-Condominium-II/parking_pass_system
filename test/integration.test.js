@@ -29,6 +29,7 @@ const app = require('../src/server');
 const db = require('../src/db');
 const password = require('../src/auth/password');
 const barcode = require('../src/crypto/barcode');
+const sso = require('../src/auth/sso');
 
 let base;      // http://127.0.0.1:<port>
 let server;
@@ -650,6 +651,39 @@ test('org/condo name is readable and management can change it', async () => {
   await sec('POST', '/api/auth/login', { username: 'security1', password: 'changeme123' });
   const denied = await sec('PATCH', '/api/admin/settings', { orgName: 'Nope' });
   assert.equal(denied.status, 403);
+});
+
+test('SSO: providers list reflects config; email maps to a provisioned user', async () => {
+  const anon = makeClient();
+  const prov = await anon('GET', '/api/auth/providers');
+  assert.equal(prov.status, 200);
+  // No SSO env vars are set in the test environment.
+  assert.deepEqual(prov.body.sso, []);
+  assert.equal(sso.isEnabled('google'), false);
+
+  // A user with an email is resolvable; an unknown email is not.
+  const mgr = makeClient();
+  await mgr('POST', '/api/auth/login', { username: 'manager1', password: 'changeme123' });
+  await mgr('POST', '/api/admin/users', {
+    username: 'ssouser', firstName: 'Essa', lastName: 'Oh', role: 'management',
+    email: 'Essa.Oh@Example.com', password: 'pw12345678',
+  });
+
+  const found = await sso.findUserByEmail('essa.oh@example.com'); // case-insensitive
+  assert.ok(found && found.username === 'ssouser');
+  const missing = await sso.findUserByEmail('nobody@example.com');
+  assert.equal(missing, null);
+
+  // Duplicate email is rejected.
+  const dup = await mgr('POST', '/api/admin/users', {
+    username: 'ssouser2', firstName: 'Dup', lastName: 'Licate', role: 'security',
+    email: 'essa.oh@example.com', password: 'pw12345678',
+  });
+  assert.equal(dup.status, 409);
+
+  // A deactivated user no longer resolves for SSO.
+  await mgr('PATCH', `/api/admin/users/${found.id}`, { isActive: false });
+  assert.equal(await sso.findUserByEmail('essa.oh@example.com'), null);
 });
 
 test('the print sheet is Letter-sized and embeds a signed QR', async () => {

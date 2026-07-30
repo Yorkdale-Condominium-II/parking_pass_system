@@ -23,6 +23,7 @@ app.use(cookieParser());
 
 // --- API routes ---
 app.use('/api/auth', require('./routes/auth'));
+app.use('/api/auth/sso', require('./routes/sso')); // Google / Microsoft sign-in
 app.use('/api', require('./routes/meta'));   // /api/units, /api/regions
 app.use('/api/settings', require('./routes/settings')); // public display settings
 app.use('/api/passes', require('./routes/passes'));
