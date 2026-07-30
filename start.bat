@@ -43,6 +43,12 @@ if errorlevel 1 (
 )
 
 echo.
+REM --- Stop any server still running from a previous launch ------------------
+REM Without this, a freshly pulled build can't take over because the old
+REM process keeps holding port 3000 (you'd keep running stale code).
+echo Stopping any previous server on port 3000...
+powershell -NoProfile -Command "$c = Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue; if ($c) { $c.OwningProcess | Select-Object -Unique | ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue } ; Start-Sleep -Seconds 1 }"
+
 echo Starting server in the background...
 
 REM --- Launch the server as an independent, hidden background process --------
