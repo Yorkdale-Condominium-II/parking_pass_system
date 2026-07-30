@@ -260,3 +260,28 @@ ALTER TABLE pass_requests ADD COLUMN IF NOT EXISTS requester_email TEXT;
 ALTER TABLE pass_requests ADD COLUMN IF NOT EXISTS ref_code        TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_requests_refcode ON pass_requests(ref_code);
 COMMIT;
+
+-- ============================================================================
+--  v5 migration — scheduled passes + physical-spot occupancy tracking.
+-- ============================================================================
+BEGIN;
+
+-- When the pass's spot occupancy begins (defaults to issuance = "now").
+ALTER TABLE visitor_passes ADD COLUMN IF NOT EXISTS starts_at  TIMESTAMPTZ;
+UPDATE visitor_passes SET starts_at = issued_at WHERE starts_at IS NULL;
+ALTER TABLE visitor_passes ALTER COLUMN starts_at SET DEFAULT now();
+
+-- Early check-out: when set, the vehicle has vacated and the spot is freed
+-- before expiry.
+ALTER TABLE visitor_passes ADD COLUMN IF NOT EXISTS vacated_at TIMESTAMPTZ;
+ALTER TABLE visitor_passes ADD COLUMN IF NOT EXISTS vacated_by UUID REFERENCES users(id);
+
+-- Speeds up occupancy/overlap queries over active passes.
+CREATE INDEX IF NOT EXISTS idx_pass_window
+  ON visitor_passes(starts_at, expires_at)
+  WHERE status = 'active' AND vacated_at IS NULL;
+
+-- Scheduled start time requested by a resident (NULL = as soon as possible).
+ALTER TABLE pass_requests ADD COLUMN IF NOT EXISTS starts_at TIMESTAMPTZ;
+
+COMMIT;

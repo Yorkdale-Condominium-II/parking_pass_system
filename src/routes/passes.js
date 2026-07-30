@@ -90,8 +90,8 @@ router.get('/lookup', requireAuth, requireRole('security', 'management'), async 
 router.post('/', requireAuth, requireRole('security', 'management'), async (req, res) => {
   const {
     unitNumber, visitorPlate, visitorFirstName, visitorLastName,
-    visitorCountry, visitorRegion, durationPreset, durationHours,
-    override, overrideCode, overrideReason,
+    visitorCountry, visitorRegion, durationPreset, durationHours, startsAt,
+    override, overrideCode, overrideReason, spotOverride,
   } = req.body || {};
   if (!unitNumber || !visitorPlate) {
     return res.status(400).json({ error: 'unit_and_plate_required' });
@@ -106,10 +106,12 @@ router.post('/', requireAuth, requireRole('security', 'management'), async (req,
       visitorRegion,
       durationPreset,
       durationHours: durationHours ? parseInt(durationHours, 10) : undefined,
+      startsAt: startsAt || undefined,
       issuer: req.user,
       override: Boolean(override),
       overrideCode,
       overrideReason,
+      spotOverride: Boolean(spotOverride),
     });
     res.status(201).json({
       passId: result.pass.id,
@@ -118,24 +120,29 @@ router.post('/', requireAuth, requireRole('security', 'management'), async (req,
       visitorPlate: result.pass.visitor_plate,
       visitorName: result.pass.visitor_name,
       shortCode: result.shortCode,
-      issuedAt: result.pass.issued_at,
-      expiresAt: result.pass.expires_at,
       token: result.token,
+      issuedAt: result.pass.issued_at,
+      startsAt: result.pass.starts_at,
+      expiresAt: result.pass.expires_at,
       usedOverride: result.usedOverride,
+      usedSpotOverride: result.usedSpotOverride,
       quota: result.quota,
+      spots: result.spots,
       printUrl: `/api/passes/${result.pass.id}/print`,
     });
   } catch (err) {
     const codeMap = {
       unit_not_found: 404,
       quota_exceeded: 409,
+      spot_full: 409,
       override_code_invalid: 403,
       override_reason_required: 400,
       invalid_plate: 400,
       invalid_region: 400,
+      invalid_start: 400,
     };
     if (codeMap[err.code]) {
-      return res.status(codeMap[err.code]).json({ error: err.code, message: err.message, quota: err.quota });
+      return res.status(codeMap[err.code]).json({ error: err.code, message: err.message, quota: err.quota, spots: err.spots });
     }
     throw err;
   }
@@ -180,6 +187,17 @@ router.post('/:id/revoke', requireAuth, requireRole('security', 'management'), a
     res.json({ ok: true, passId: pass.id, status: pass.status });
   } catch (err) {
     if (err.code === 'not_revokable') return res.status(409).json({ error: err.code, message: err.message });
+    throw err;
+  }
+});
+
+// Vehicle vacated the spot — free it early for the next guest.
+router.post('/:id/vacate', requireAuth, requireRole('security', 'management'), async (req, res) => {
+  try {
+    const pass = await passService.vacatePass(req.params.id, req.user.id);
+    res.json({ ok: true, passId: pass.id, vacatedAt: pass.vacated_at });
+  } catch (err) {
+    if (err.code === 'not_vacatable') return res.status(409).json({ error: err.code, message: err.message });
     throw err;
   }
 });

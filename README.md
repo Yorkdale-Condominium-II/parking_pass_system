@@ -151,6 +151,20 @@ resident can check status any time at the bottom of the portal by entering it
 request emails them the pass with a **printable PDF attached** (requires SMTP —
 see `.env.example`; without it, approval still works and the email is skipped).
 
+### Physical spaces, scheduling & live occupancy
+
+The building has a fixed number of visitor spaces (`SPOT_CAPACITY`, default 5).
+Independently of the annual per-unit quota, at most that many passes may be
+**live** (occupying a spot) at once. A pass occupies its spot over
+`[starts_at, expires_at]`; passes can be **scheduled** for a future start, and
+issuance checks the *peak overlap* across that window so the spaces can't be
+overbooked in advance. When the spaces are full, Security/Management may
+**override** if a spot is physically free (logged as a spot override). The
+**Spots** tab is a live board of occupied spaces and upcoming scheduled
+arrivals; **Mark vacated** frees a spot early for the next guest (also available
+from the Verify screen). Verify verdicts include `SCHEDULED` (not yet started)
+and `VACATED` (checked out) alongside `VALID`/`EXPIRED`/`REVOKED`.
+
 ### Year-end archive & clear (Management)
 
 When passes/requests/audit rows exist from a previous calendar year, the

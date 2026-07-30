@@ -29,10 +29,13 @@ async function buildPassPdf({ pass, token, shortCode, issuerName, issuerRole }) 
     doc.moveDown(1);
 
     const region = pass.visitor_region ? ` (${String(pass.visitor_region).replace('-', ' ')})` : '';
+    const scheduled = pass.starts_at &&
+      (new Date(pass.starts_at).getTime() - new Date(pass.issued_at).getTime() > 60000);
     const rows = [
       ['Visitor licence plate', `${pass.visitor_plate}${region}`],
       ['Visitor name', pass.visitor_name || '—'],
       ['Issued', new Date(pass.issued_at).toLocaleString()],
+      ...(scheduled ? [['Valid from', new Date(pass.starts_at).toLocaleString()]] : []),
       ['Expires', new Date(pass.expires_at).toLocaleString()],
       ['Issued by', `${issuerName} (${issuerRole})`],
     ];
@@ -52,7 +55,7 @@ async function buildPassPdf({ pass, token, shortCode, issuerName, issuerRole }) 
        .text(`Verification code: ${shortCode}`, { align: 'center' });
     doc.moveDown(0.5);
     doc.fontSize(9).font('Helvetica').fillColor('#8b95a1')
-       .text('Security: scan the QR or key in the verification code. This pass is cryptographically signed and cannot be altered. Display it on the vehicle dashboard with the plate visible.', { align: 'center' });
+       .text('Security: scan the QR or key in the verification code. This pass is cryptographically signed and cannot be altered. Display it on the vehicle dashboard with the plate visible. If the vehicle vacates the spot, the Corporation reserves the right to offer the vacated space to the next guest.', { align: 'center' });
 
     doc.end();
   });

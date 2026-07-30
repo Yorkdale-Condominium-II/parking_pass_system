@@ -98,6 +98,25 @@ test.before(async () => {
   });
 });
 
+// Isolate each test: clear the transactional tables (keep users/units/
+// residents/vehicles from before()). Prevents live passes from one test
+// consuming the 5-spot capacity in the next.
+test.beforeEach(async () => {
+  await db.query(
+    `TRUNCATE pass_requests, pass_audit_log, auth_audit_log, override_grants,
+              visitor_passes RESTART IDENTITY CASCADE`
+  );
+});
+
+// Issue a pass through the API then immediately vacate it, so it counts against
+// the annual quota without holding a physical spot (used to test quota alone).
+async function issueAndFree(client, unitNumber, plate) {
+  const iss = await client('POST', '/api/passes', { unitNumber, visitorPlate: plate });
+  assert.equal(iss.status, 201, `issue ${plate}: ${JSON.stringify(iss.body)}`);
+  await client('POST', `/api/passes/${iss.body.passId}/vacate`, {});
+  return iss;
+}
+
 test.after(async () => {
   await new Promise((r) => server.close(r));
   await db.pool.end();
@@ -250,10 +269,9 @@ test('a genuine-but-expired token verifies as EXPIRED', async () => {
 test('enforces the 10-pass annual quota and blocks the 11th', async () => {
   const c = makeClient();
   await c('POST', '/api/auth/login', { username: 'security1', password: 'changeme123' });
-  for (let i = 0; i < 10; i++) {
-    const r = await c('POST', '/api/passes', { unitNumber: '0805', visitorPlate: 'Q' + i });
-    assert.equal(r.status, 201, `pass #${i + 1} should succeed`);
-  }
+  // Free each spot after issuing so the annual quota (not the 5-spot cap) is
+  // what we're exercising here.
+  for (let i = 0; i < 10; i++) await issueAndFree(c, '0805', 'Q' + i);
   const blocked = await c('POST', '/api/passes', { unitNumber: '0805', visitorPlate: 'Q10' });
   assert.equal(blocked.status, 409);
   assert.equal(blocked.body.error, 'quota_exceeded');
@@ -263,6 +281,8 @@ test('enforces the 10-pass annual quota and blocks the 11th', async () => {
 test('override requires the current weekly code and a reason', async () => {
   const sec = makeClient();
   await sec('POST', '/api/auth/login', { username: 'security1', password: 'changeme123' });
+  // Bring 0805 to its 10-pass limit (freeing spots as we go).
+  for (let i = 0; i < 10; i++) await issueAndFree(sec, '0805', 'F' + i);
 
   // Wrong/absent code is rejected even though we are at the limit.
   const denied = await sec('POST', '/api/passes', {
@@ -293,13 +313,64 @@ test('commercial units get the higher (20) annual quota', async () => {
   const c = makeClient();
   await c('POST', '/api/auth/login', { username: 'security1', password: 'changeme123' });
   for (let i = 0; i < 20; i++) {
-    const r = await c('POST', '/api/passes', { unitNumber: 'C-101', visitorPlate: 'K' + i });
-    assert.equal(r.status, 201, `commercial pass #${i + 1} should succeed`);
+    const r = await issueAndFree(c, 'C-101', 'K' + i);
     assert.equal(r.body.kind, 'commercial');
   }
   const blocked = await c('POST', '/api/passes', { unitNumber: 'C-101', visitorPlate: 'K20' });
   assert.equal(blocked.status, 409);
   assert.equal(blocked.body.quota.limit, 20);
+});
+
+test('caps concurrent live passes at the 5-space limit, security can override', async () => {
+  const c = makeClient();
+  await c('POST', '/api/auth/login', { username: 'security1', password: 'changeme123' });
+  // Commercial unit has quota 20, so only the 5-space cap is in play here.
+  for (let i = 0; i < 5; i++) {
+    const r = await c('POST', '/api/passes', { unitNumber: 'C-101', visitorPlate: 'S' + i });
+    assert.equal(r.status, 201, `spot ${i + 1}`);
+  }
+  const full = await c('POST', '/api/passes', { unitNumber: 'C-101', visitorPlate: 'S5' });
+  assert.equal(full.status, 409);
+  assert.equal(full.body.error, 'spot_full');
+  assert.equal(full.body.spots.capacity, 5);
+
+  // Security override (spot confirmed free) succeeds.
+  const over = await c('POST', '/api/passes', { unitNumber: 'C-101', visitorPlate: 'S5', spotOverride: true });
+  assert.equal(over.status, 201);
+  assert.equal(over.body.usedSpotOverride, true);
+});
+
+test('scheduling a non-overlapping window avoids the live cap', async () => {
+  const c = makeClient();
+  await c('POST', '/api/auth/login', { username: 'security1', password: 'changeme123' });
+  for (let i = 0; i < 5; i++) {
+    await c('POST', '/api/passes', { unitNumber: 'C-101', visitorPlate: 'N' + i });
+  }
+  // A pass scheduled well into the future doesn't overlap the 5 live ones.
+  const future = new Date(Date.now() + 10 * 24 * 3600 * 1000).toISOString();
+  const sched = await c('POST', '/api/passes', { unitNumber: 'C-101', visitorPlate: 'SCHED1', startsAt: future });
+  assert.equal(sched.status, 201, JSON.stringify(sched.body));
+});
+
+test('vacating a spot frees capacity for the next guest', async () => {
+  const c = makeClient();
+  await c('POST', '/api/auth/login', { username: 'security1', password: 'changeme123' });
+  const ids = [];
+  for (let i = 0; i < 5; i++) {
+    const r = await c('POST', '/api/passes', { unitNumber: 'C-101', visitorPlate: 'V' + i });
+    ids.push(r.body.passId);
+  }
+  assert.equal((await c('POST', '/api/passes', { unitNumber: 'C-101', visitorPlate: 'V5' })).status, 409);
+
+  const vac = await c('POST', `/api/passes/${ids[0]}/vacate`, {});
+  assert.equal(vac.status, 200);
+
+  const now201 = await c('POST', '/api/passes', { unitNumber: 'C-101', visitorPlate: 'V5' });
+  assert.equal(now201.status, 201, 'a freed spot should allow a new pass');
+
+  const spots = await c('GET', '/api/spots');
+  assert.equal(spots.body.capacity, 5);
+  assert.equal(spots.body.used, 5);
 });
 
 test('the current weekly override code is viewable by management', async () => {
@@ -328,9 +399,15 @@ test('board sees aggregates but is denied resident/plate data', async () => {
   const board = makeClient();
   await board('POST', '/api/auth/login', { username: 'board1', password: 'changeme123' });
 
+  // Seed a couple of passes so the aggregates are non-zero.
+  const staff = makeClient();
+  await staff('POST', '/api/auth/login', { username: 'security1', password: 'changeme123' });
+  await issueAndFree(staff, '1204', 'BRD1');
+  await issueAndFree(staff, 'C-101', 'BRD2');
+
   const summary = await board('GET', '/api/board/summary');
   assert.equal(summary.status, 200);
-  assert.ok(summary.body.totals.total_passes >= 11);
+  assert.ok(summary.body.totals.total_passes >= 2);
   // No PII fields leak into the board payload.
   assert.equal(JSON.stringify(summary.body).includes('visitor_name'), false);
 
@@ -350,6 +427,8 @@ test('management admin can create a user and read the audit log', async () => {
   assert.equal(created.status, 201);
   assert.equal(created.body.role, 'security');
 
+  // Issue a pass so the audit log has an 'issued' entry to read back.
+  await mgr('POST', '/api/passes', { unitNumber: '1204', visitorPlate: 'AUD1' });
   const audit = await mgr('GET', '/api/admin/audit?limit=50');
   assert.equal(audit.status, 200);
   assert.ok(Array.isArray(audit.body));

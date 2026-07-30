@@ -25,6 +25,9 @@ module.exports = {
   // Hard ceiling on residential units (building has 1520). Commercial units are
   // tracked separately and do not count against this.
   residentialUnitCap: parseInt(process.env.RESIDENTIAL_UNIT_CAP || '1520', 10),
+  // Number of physical visitor parking spaces. At most this many passes may be
+  // "live" (occupying a spot) at any instant, building-wide.
+  spotCapacity: parseInt(process.env.SPOT_CAPACITY || '5', 10),
   defaultPassDurationHours: parseInt(process.env.DEFAULT_PASS_DURATION_HOURS || '24', 10),
   // Barcode payloads older than the pass expiry are always rejected; this is an
   // additional hard ceiling in case a very long-lived pass is ever created.

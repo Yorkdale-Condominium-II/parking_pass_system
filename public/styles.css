@@ -37,6 +37,8 @@ th { background: #f6f8fa; text-transform: uppercase; letter-spacing: 1px; font-s
 .badge { display: inline-block; padding: 4px 12px; border-radius: 999px; font-weight: 700; font-size: 13px; }
 .badge.VALID { background: #dcfce7; color: var(--ok); }
 .badge.EXPIRED { background: #fef9c3; color: var(--warn); }
+.badge.SCHEDULED { background: #dbeafe; color: #1d4ed8; }
+.badge.VACATED { background: #e5e7eb; color: #374151; }
 .badge.REVOKED, .badge.FORGED, .badge.INVALID { background: #fee2e2; color: var(--danger); }
 
 .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; }

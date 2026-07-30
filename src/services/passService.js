@@ -2,6 +2,7 @@
 const db = require('./../db');
 const config = require('./../config');
 const { evaluateQuota } = require('./quota');
+const { evaluateSpots } = require('./spots');
 const barcode = require('./../crypto/barcode');
 const regions = require('./../regions');
 
@@ -23,21 +24,21 @@ async function audit(client, { passId, action, actorId, detail }) {
  *   'tomorrow_noon'-> 12:00 local the following day
  * Falls back to durationHours, then the configured default.
  */
-function computeExpiry(now, preset, durationHours) {
+function computeExpiry(base, preset, durationHours) {
   if (preset === 'today') {
-    const d = new Date(now);
+    const d = new Date(base);
     d.setHours(23, 59, 59, 0);
-    if (d <= now) d.setDate(d.getDate() + 1); // safety near midnight
+    if (d <= base) d.setDate(d.getDate() + 1); // safety near midnight
     return d;
   }
   if (preset === 'tomorrow_noon') {
-    const d = new Date(now);
+    const d = new Date(base);
     d.setDate(d.getDate() + 1);
     d.setHours(12, 0, 0, 0);
     return d;
   }
   const hours = durationHours || config.defaultPassDurationHours;
-  return new Date(now.getTime() + hours * 3600 * 1000);
+  return new Date(base.getTime() + hours * 3600 * 1000);
 }
 
 /**
@@ -92,7 +93,13 @@ async function issuePass(opts) {
     const unit = unitRes.rows[0];
 
     const now = new Date();
-    const year = now.getFullYear();
+    // Scheduled start (future) or now. The spot window is [startsAt, expiresAt].
+    const startsAt = opts.startsAt ? new Date(opts.startsAt) : now;
+    if (isNaN(startsAt.getTime())) {
+      const e = new Error('Invalid start time.'); e.code = 'invalid_start'; throw e;
+    }
+    // Quota counts against the calendar year the pass is USED in.
+    const year = startsAt.getFullYear();
     const quota = await evaluateQuota(client, unit.id, year);
 
     let usedOverride = false;
@@ -136,7 +143,26 @@ async function issuePass(opts) {
       usedOverride = true;
     }
 
-    const expiresAt = computeExpiry(now, opts.durationPreset, opts.durationHours);
+    const expiresAt = computeExpiry(startsAt, opts.durationPreset, opts.durationHours);
+
+    // Physical-spot capacity check (building-wide, over the pass's window).
+    const spots = await evaluateSpots(client, startsAt, expiresAt);
+    let usedSpotOverride = false;
+    if (spots.wouldExceed) {
+      if (!opts.spotOverride) {
+        await audit(client, {
+          action: 'denied', actorId: opts.issuer.id,
+          detail: { unit: unit.unit_number, reason: 'spot_full', ...spots },
+        });
+        const e = new Error(
+          `All ${spots.capacity} visitor spaces are taken for that time. Security may override if a spot is actually free.`
+        );
+        e.code = 'spot_full';
+        e.spots = spots;
+        throw e;
+      }
+      usedSpotOverride = true; // Security confirmed a spot is available
+    }
 
     const first = (opts.visitorFirstName || '').trim();
     const last = (opts.visitorLastName || '').trim();
@@ -148,12 +174,12 @@ async function issuePass(opts) {
     const insertRes = await client.query(
       `INSERT INTO visitor_passes
          (unit_id, visitor_plate, visitor_name, visitor_first_name, visitor_last_name,
-          visitor_region, issued_by, issued_at, expires_at, calendar_year,
+          visitor_region, issued_by, issued_at, starts_at, expires_at, calendar_year,
           status, was_override, barcode_sig)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'active',$11,'')
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'active',$12,'')
        RETURNING *`,
       [unit.id, plate, fullName, first || null, last || null, regionStored,
-       opts.issuer.id, now, expiresAt, year, usedOverride]
+       opts.issuer.id, now, startsAt, expiresAt, year, usedOverride]
     );
     const pass = insertRes.rows[0];
 
@@ -175,7 +201,9 @@ async function issuePass(opts) {
       passId: pass.id,
       action: usedOverride ? 'override_used' : 'issued',
       actorId: opts.issuer.id,
-      detail: { unit: unit.unit_number, kind: unit.kind, plate, year, override: usedOverride },
+      detail: { unit: unit.unit_number, kind: unit.kind, plate, year,
+                override: usedOverride, spotOverride: usedSpotOverride,
+                scheduled: startsAt.getTime() > now.getTime() + 60000 },
     });
 
     return {
@@ -183,7 +211,9 @@ async function issuePass(opts) {
       token,
       shortCode,
       quota,
+      spots,
       usedOverride,
+      usedSpotOverride,
     };
   });
 }
@@ -193,6 +223,8 @@ async function reconcilePass(row, actorId, actorDetail) {
   const now = Date.now();
   let verdict;
   if (row.status === 'revoked') verdict = 'REVOKED';
+  else if (row.vacated_at) verdict = 'VACATED';
+  else if (row.starts_at && now < new Date(row.starts_at).getTime()) verdict = 'SCHEDULED';
   else if (now > new Date(row.expires_at).getTime()) verdict = 'EXPIRED';
   else verdict = 'VALID';
 
@@ -213,10 +245,35 @@ async function reconcilePass(row, actorId, actorDetail) {
       visitor_name: row.visitor_name,
       visitor_region: row.visitor_region,
       issued_at: row.issued_at,
+      starts_at: row.starts_at,
       expires_at: row.expires_at,
+      vacated_at: row.vacated_at,
       status: row.status,
     },
   };
+}
+
+/**
+ * Mark a pass as vacated — the vehicle has left and the spot is freed early for
+ * the next guest. Only affects active, non-vacated passes.
+ */
+async function vacatePass(passId, actorId) {
+  return db.withTransaction(async (client) => {
+    const res = await client.query(
+      `UPDATE visitor_passes
+          SET vacated_at = now(), vacated_by = $2
+        WHERE id = $1 AND status = 'active' AND vacated_at IS NULL
+        RETURNING *`,
+      [passId, actorId]
+    );
+    if (res.rowCount === 0) {
+      const e = new Error('Pass not found, not active, or already vacated.');
+      e.code = 'not_vacatable';
+      throw e;
+    }
+    await audit(client, { passId, action: 'vacated', actorId, detail: {} });
+    return res.rows[0];
+  });
 }
 
 /**
@@ -289,5 +346,5 @@ async function revokePass(passId, actorId) {
 }
 
 module.exports = {
-  issuePass, verifyPass, verifyByShortCode, revokePass, normalizePlate, computeExpiry,
+  issuePass, verifyPass, verifyByShortCode, revokePass, vacatePass, normalizePlate, computeExpiry,
 };

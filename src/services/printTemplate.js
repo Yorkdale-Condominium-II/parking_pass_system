@@ -26,6 +26,10 @@ function renderPassSheet({ pass, token, qrDataUrl, shortCode }) {
   const plateLine = pass.visitor_region
     ? `${pass.visitor_plate} (${pass.visitor_region.replace('-', ' ')})`
     : pass.visitor_plate;
+  // Show a "Valid from" row only when the pass is scheduled to start later than
+  // it was issued (more than a minute's difference).
+  const scheduled = pass.starts_at &&
+    (new Date(pass.starts_at).getTime() - new Date(pass.issued_at).getTime() > 60000);
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -119,6 +123,10 @@ function renderPassSheet({ pass, token, qrDataUrl, shortCode }) {
         <div class="lbl">Date &amp; Time Issued</div>
         <div class="val">${esc(fmt(pass.issued_at))}</div>
       </div>
+      ${scheduled ? `<div class="field">
+        <div class="lbl">Valid From</div>
+        <div class="val">${esc(fmt(pass.starts_at))}</div>
+      </div>` : ''}
       <div class="field">
         <div class="lbl">Issued By</div>
         <div class="val">${esc(pass.issuer_name)} <span style="font-size:13px;color:#6a7581">(${esc(roleLabel)})</span></div>
@@ -133,12 +141,13 @@ function renderPassSheet({ pass, token, qrDataUrl, shortCode }) {
       <img src="${qrDataUrl}" alt="Verification QR code">
       <div class="shortcode">Verification code: <b>${esc(shortCode || '')}</b></div>
       <div class="note">Security: scan the QR to verify, or key in the verification code above. This pass is cryptographically signed and cannot be duplicated or altered.</div>
-      <div class="token">${esc(token)}</div>
     </div>
 
     <div class="foot">
-      Pass ID: ${esc(pass.id)} &nbsp;•&nbsp; Display this pass on the vehicle dashboard, plate visible.
+      Display this pass on the vehicle dashboard, plate visible.
       Tampering voids the pass and may result in towing at the owner's expense.
+      If the vehicle vacates the spot, the Corporation reserves the right to offer the
+      vacated space to the next guest.
     </div>
   </div>
 </body>

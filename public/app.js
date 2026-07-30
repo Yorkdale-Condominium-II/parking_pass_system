@@ -16,11 +16,11 @@ const api = async (path, opts = {}) => {
 };
 
 const ROLE_VIEWS = {
-  security:   ['lookup', 'issue', 'verify', 'requests'],
-  management: ['lookup', 'issue', 'verify', 'requests', 'admin', 'board'],
+  security:   ['lookup', 'issue', 'verify', 'spots', 'requests'],
+  management: ['lookup', 'issue', 'verify', 'spots', 'requests', 'admin', 'board'],
   board:      ['board'],
 };
-const VIEW_LABELS = { lookup: 'Lookup', issue: 'Issue Pass', verify: 'Verify', requests: 'Requests', admin: 'Management', board: 'Dashboard' };
+const VIEW_LABELS = { lookup: 'Lookup', issue: 'Issue Pass', verify: 'Verify', spots: 'Spots', requests: 'Requests', admin: 'Management', board: 'Dashboard' };
 let currentUser = null;
 let unitIndex = {};   // unit_number -> {kind, business_name}
 let regionData = null;
@@ -32,8 +32,9 @@ function showView(name) {
   document.querySelectorAll('#nav button').forEach((b) => b.classList.toggle('active', b.dataset.view === name));
   if (name === 'board') loadBoard();
   if (name === 'admin') { loadAudit(); loadAuthAudit(); loadOverrideCode(); loadExportDatasets(); loadYearEnd(); }
-  if (name === 'issue') loadUnits();
+  if (name === 'issue') { loadUnits(); loadSpotsBadge(); }
   if (name === 'requests') loadRequests();
+  if (name === 'spots') loadSpots();
   if (name !== 'verify') stopCamera();
 }
 
@@ -140,20 +141,33 @@ $('#issueForm').onsubmit = async (e) => {
     visitorRegion: f.get('visitorRegion'),
     visitorPlate: f.get('visitorPlate'),
     durationPreset: f.get('durationPreset'),
+    startsAt: f.get('startsAt') || undefined,
     override: f.get('override') === 'on',
     overrideCode: f.get('overrideCode'),
     overrideReason: f.get('overrideReason'),
   };
   try {
-    const r = await api('/passes', { method: 'POST', body });
+    let r;
+    try {
+      r = await api('/passes', { method: 'POST', body });
+    } catch (e1) {
+      if (e1.data?.error === 'spot_full') {
+        const sp = e1.data.spots || {};
+        if (!confirm(`All ${sp.capacity} visitor spaces are taken for that time. Only override if you've confirmed a spot is physically free. Override and issue anyway?`)) {
+          throw e1;
+        }
+        r = await api('/passes', { method: 'POST', body: { ...body, spotOverride: true } });
+      } else { throw e1; }
+    }
     const q = r.quota || {};
     $('#issueResult').innerHTML = `
       <div class="result-card">
-        <h3>Pass issued ${r.usedOverride ? '(override used)' : ''}</h3>
+        <h3>Pass issued ${r.usedOverride ? '(quota override)' : ''}${r.usedSpotOverride ? ' (spot override)' : ''}</h3>
         <p>Unit <b>${r.unitNumber}</b> (${r.kind}) · Plate <b>${r.visitorPlate}</b> · ${r.visitorName || 'visitor'}</p>
+        ${new Date(r.startsAt) - new Date(r.issuedAt) > 60000 ? `<p>Valid from: <b>${new Date(r.startsAt).toLocaleString()}</b></p>` : ''}
         <p>Expires: <b>${new Date(r.expiresAt).toLocaleString()}</b></p>
         <p>Verification code: <b style="font-family:monospace;font-size:18px">${r.shortCode}</b></p>
-        <p>${q.unlimited ? 'Commercial: unlimited' : `Quota this year: ${q.used}/${q.limit} used`}</p>
+        <p>${q.unlimited ? 'Commercial: unlimited' : `Quota this year: ${q.used}/${q.limit} used`} · Spaces used: ${r.spots ? r.spots.peak + '/' + r.spots.capacity + ' at peak' : ''}</p>
         <a href="${r.printUrl}" target="_blank"><button type="button">🖨 Open printable pass</button></a>
       </div>`;
     e.target.reset();
@@ -227,15 +241,19 @@ async function doVerify(body) {
       <p>Unit <b>${r.pass.unit_number}</b> (${r.pass.kind || ''}) · Plate <b>${r.pass.visitor_plate}</b>${r.pass.visitor_region ? ' (' + r.pass.visitor_region.replace('-', ' ') + ')' : ''}</p>
       <p>Visitor: ${r.pass.visitor_name || '—'}</p>
       <p>Expires: ${new Date(r.pass.expires_at).toLocaleString()}</p>
-      ${r.verdict === 'VALID' ? `<button type="button" data-action="revoke" data-id="${r.pass.id}">Revoke this pass</button>` : ''}` : `<p>Reason: ${r.reason}</p>`;
+      ${r.verdict === 'VALID' ? `<div class="btn-row">
+        <button type="button" data-action="vacate" data-id="${r.pass.id}">Vehicle vacated (free spot)</button>
+        <button type="button" class="danger" data-action="revoke" data-id="${r.pass.id}">Revoke this pass</button>
+      </div>` : ''}` : `<p>Reason: ${r.reason}</p>`;
     $('#verifyResult').innerHTML = `<div class="result-card"><span class="badge ${r.verdict}">${r.verdict}</span>${detail}</div>`;
   } catch (err) { $('#verifyResult').innerHTML = `<p class="error">${err.message}</p>`; }
 }
 $('#verifyResult').addEventListener('click', async (e) => {
-  const btn = e.target.closest('button[data-action="revoke"]');
+  const btn = e.target.closest('button[data-action]');
   if (!btn) return;
-  await api(`/passes/${btn.dataset.id}/revoke`, { method: 'POST' });
-  alert('Pass revoked.');
+  const act = btn.dataset.action;
+  if (act === 'revoke') { await api(`/passes/${btn.dataset.id}/revoke`, { method: 'POST' }); alert('Pass revoked.'); }
+  if (act === 'vacate') { await api(`/passes/${btn.dataset.id}/vacate`, { method: 'POST' }); alert('Spot freed — vehicle marked as vacated.'); }
 });
 
 // --- Admin ---
@@ -287,10 +305,11 @@ async function loadRequests() {
   $('#requestsList').innerHTML = rows.map((r) => {
     const name = [r.visitor_first_name, r.visitor_last_name].filter(Boolean).join(' ') || '—';
     const dur = r.duration_preset === 'tomorrow_noon' ? 'Until noon tomorrow' : 'Rest of today';
+    const sched = r.starts_at ? `Scheduled: ${new Date(r.starts_at).toLocaleString()}` : 'Start: now';
     return `<div class="result-card" data-id="${r.id}">
       <h3>Unit ${r.unit_number} ${r.kind === 'commercial' ? '(commercial)' : ''}</h3>
       <p>Requested by <b>${r.requester_name}</b>${r.requester_contact ? ' · ' + r.requester_contact : ''} · ${new Date(r.created_at).toLocaleString()}</p>
-      <p>Visitor <b>${name}</b> · Plate <b>${r.visitor_plate}</b>${r.visitor_region ? ' (' + r.visitor_region.replace('-', ' ') + ')' : ''} · ${dur}</p>
+      <p>Visitor <b>${name}</b> · Plate <b>${r.visitor_plate}</b>${r.visitor_region ? ' (' + r.visitor_region.replace('-', ' ') + ')' : ''} · ${dur} · ${sched}</p>
       ${r.note ? `<p>Note: ${r.note}</p>` : ''}
       <div class="btn-row">
         <button type="button" data-action="approve" data-id="${r.id}">Approve &amp; issue</button>
@@ -312,8 +331,7 @@ async function approveRequest(id) {
   const msg = $(`#reqmsg-${id}`);
   try {
     const r = await api(`/requests/${id}/approve`, { method: 'POST', body: {} });
-    const mail = r.emailed ? ' · emailed to resident' : (r.emailConfigured ? '' : ' · (email not configured)');
-    msg.innerHTML = `✓ Approved. Code <b>${r.shortCode}</b>. <a href="${r.printUrl}" target="_blank">Print pass</a>${mail}`;
+    showApproved(msg, r);
     setTimeout(loadRequests, 1800);
   } catch (err) {
     if (err.data?.error === 'quota_exceeded') {
@@ -322,16 +340,62 @@ async function approveRequest(id) {
       const reason = prompt('Override reason:') || 'staff override';
       try {
         const r2 = await api(`/requests/${id}/approve`, { method: 'POST', body: { override: true, overrideCode: code, overrideReason: reason } });
-        msg.innerHTML = `✓ Approved with override. Code <b>${r2.shortCode}</b>. <a href="${r2.printUrl}" target="_blank">Print pass</a>`;
-        setTimeout(loadRequests, 1200);
+        showApproved(msg, r2); setTimeout(loadRequests, 1500);
       } catch (e2) { msg.textContent = e2.message; }
+    } else if (err.data?.error === 'spot_full') {
+      const sp = err.data.spots || {};
+      if (!confirm(`All ${sp.capacity} visitor spaces are taken for that time. Only override if a spot is physically free. Approve anyway?`)) {
+        msg.textContent = 'Not approved (no space available).'; return;
+      }
+      try {
+        const r3 = await api(`/requests/${id}/approve`, { method: 'POST', body: { spotOverride: true } });
+        showApproved(msg, r3); setTimeout(loadRequests, 1500);
+      } catch (e3) { msg.textContent = e3.message; }
     } else { msg.textContent = err.message; }
   }
 };
+function showApproved(msg, r) {
+  const mail = r.emailed ? ' · emailed to resident' : (r.emailConfigured ? '' : ' · (email not configured)');
+  msg.innerHTML = `✓ Approved. Code <b>${r.shortCode}</b>. <a href="${r.printUrl}" target="_blank">Print pass</a>${mail}`;
+}
 async function denyRequest(id) {
   const note = prompt('Reason for denial (optional):') || '';
   try { await api(`/requests/${id}/deny`, { method: 'POST', body: { note } }); loadRequests(); }
   catch (err) { $(`#reqmsg-${id}`).textContent = err.message; }
+}
+
+// --- Spots (live occupancy board) ---
+$('#refreshSpots').onclick = loadSpots;
+async function loadSpots() {
+  const s = await api('/spots');
+  $('#spotsSummary').innerHTML = `
+    <div class="stats">
+      <div class="stat"><div class="n">${s.used}/${s.capacity}</div><div class="l">Spaces occupied</div></div>
+      <div class="stat"><div class="n">${s.available}</div><div class="l">Available now</div></div>
+      <div class="stat"><div class="n">${s.upcoming.length}</div><div class="l">Scheduled (48h)</div></div>
+    </div>`;
+  $('#spotsLive').innerHTML = s.live.length ? s.live.map((p) => `
+    <div class="result-card">
+      <p>Unit <b>${p.unit_number}</b> · Plate <b>${p.visitor_plate}</b>${p.visitor_region ? ' (' + p.visitor_region.replace('-', ' ') + ')' : ''} · ${p.visitor_name || 'visitor'}</p>
+      <p class="hint">Until ${new Date(p.expires_at).toLocaleString()}</p>
+      <button type="button" class="danger" data-action="vacate" data-id="${p.id}">Mark vacated (free spot)</button>
+    </div>`).join('') : '<p>No spaces occupied right now.</p>';
+  $('#spotsUpcoming').innerHTML = s.upcoming.length ? `<table><tr><th>Starts</th><th>Unit</th><th>Plate</th><th>Until</th></tr>` +
+    s.upcoming.map((p) => `<tr><td>${new Date(p.starts_at).toLocaleString()}</td><td>${p.unit_number}</td><td>${p.visitor_plate}</td><td>${new Date(p.expires_at).toLocaleString()}</td></tr>`).join('') + `</table>` : '<p>Nothing scheduled.</p>';
+}
+$('#spotsLive').addEventListener('click', async (e) => {
+  const btn = e.target.closest('button[data-action="vacate"]');
+  if (!btn) return;
+  if (!confirm('Confirm the vehicle has left. This frees the spot for the next guest.')) return;
+  await api(`/passes/${btn.dataset.id}/vacate`, { method: 'POST' });
+  loadSpots();
+});
+async function loadSpotsBadge() {
+  try {
+    const s = await api('/spots');
+    const btn = document.querySelector('#nav button[data-view="spots"]');
+    if (btn) btn.textContent = `${VIEW_LABELS.spots} (${s.available}/${s.capacity})`;
+  } catch {}
 }
 
 // --- Export (Management) ---

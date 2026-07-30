@@ -80,6 +80,9 @@
       </div>
       <input type="hidden" name="durationPreset" id="durationPreset" value="today">
 
+      <label>Schedule for later (optional) <input type="datetime-local" name="startsAt" id="startsAt"></label>
+      <small class="hint">Leave blank to start now. The duration above is measured from the start time.</small>
+
       <label class="check" id="overrideWrap">
         <input type="checkbox" name="override" id="overrideChk"> Quota override (requires this week's code)
       </label>
@@ -123,6 +126,17 @@
       </form>
     </details>
     <div id="verifyResult"></div>
+  </section>
+
+  <!-- Security / Management: Live spots board -->
+  <section id="view-spots" class="view" hidden>
+    <h1>Visitor Spaces</h1>
+    <div id="spotsSummary"></div>
+    <button id="refreshSpots">Refresh</button>
+    <h2>Occupied now</h2>
+    <div id="spotsLive"></div>
+    <h2>Scheduled (next 48h)</h2>
+    <div id="spotsUpcoming"></div>
   </section>
 
   <!-- Security / Management: Resident requests -->

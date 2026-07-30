@@ -36,7 +36,7 @@ router.post('/requests', submitLimiter, async (req, res) => {
   const {
     unitNumber, requesterName, requesterContact, requesterEmail,
     visitorFirstName, visitorLastName, visitorCountry, visitorRegion,
-    visitorPlate, durationPreset, note,
+    visitorPlate, durationPreset, startsAt, note,
   } = req.body || {};
 
   if (!unitNumber || !requesterName || !visitorPlate) {
@@ -56,6 +56,13 @@ router.post('/requests', submitLimiter, async (req, res) => {
   }
   const preset = durationPreset === 'tomorrow_noon' ? 'tomorrow_noon' : 'today';
 
+  let scheduledStart = null;
+  if (startsAt) {
+    const d = new Date(startsAt);
+    if (isNaN(d.getTime())) return res.status(400).json({ error: 'invalid_start' });
+    scheduledStart = d;
+  }
+
   const unit = await db.query(`SELECT id FROM units WHERE unit_number = $1`, [unitNumber]);
   if (unit.rowCount === 0) {
     // Don't confirm/deny which units exist beyond this direct check.
@@ -70,12 +77,12 @@ router.post('/requests', submitLimiter, async (req, res) => {
         `INSERT INTO pass_requests
            (unit_id, requester_name, requester_contact, requester_email,
             visitor_first_name, visitor_last_name, visitor_plate, visitor_region,
-            duration_preset, note, ref_code)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+            duration_preset, starts_at, note, ref_code)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
          RETURNING ref_code, created_at`,
         [unit.rows[0].id, requesterName.trim(), (requesterContact || '').trim() || null,
          email || null, (visitorFirstName || '').trim() || null, (visitorLastName || '').trim() || null,
-         plate, region ? `${country}-${region}` : null, preset, (note || '').trim() || null, makeRef()]
+         plate, region ? `${country}-${region}` : null, preset, scheduledStart, (note || '').trim() || null, makeRef()]
       );
       row = r.rows[0];
       break;

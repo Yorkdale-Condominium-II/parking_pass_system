@@ -16,7 +16,7 @@ router.get('/', async (req, res) => {
   const r = await db.query(
     `SELECT pr.id, pr.status, pr.created_at, pr.requester_name, pr.requester_contact,
             pr.visitor_first_name, pr.visitor_last_name, pr.visitor_plate, pr.visitor_region,
-            pr.duration_preset, pr.note, pr.pass_id, pr.decided_at, pr.decision_note,
+            pr.duration_preset, pr.starts_at, pr.note, pr.pass_id, pr.decided_at, pr.decision_note,
             u.unit_number, u.kind, usr.full_name AS decided_by_name
        FROM pass_requests pr
        JOIN units u ON u.id = pr.unit_id
@@ -32,7 +32,7 @@ router.get('/', async (req, res) => {
 // Approve a pending request -> issue a real pass (quota enforced here). The
 // override path reuses the weekly-code mechanism.
 router.post('/:id/approve', async (req, res) => {
-  const { override, overrideCode, overrideReason } = req.body || {};
+  const { override, overrideCode, overrideReason, spotOverride } = req.body || {};
   const reqRow = await db.query(
     `SELECT pr.*, u.unit_number FROM pass_requests pr
        JOIN units u ON u.id = pr.unit_id
@@ -58,10 +58,12 @@ router.post('/:id/approve', async (req, res) => {
       visitorCountry: country,
       visitorRegion: region,
       durationPreset: pr.duration_preset,
+      startsAt: pr.starts_at || undefined,
       issuer: req.user,
       override: Boolean(override),
       overrideCode,
       overrideReason,
+      spotOverride: Boolean(spotOverride),
     });
     await db.query(
       `UPDATE pass_requests
@@ -103,11 +105,11 @@ router.post('/:id/approve', async (req, res) => {
     });
   } catch (err) {
     const codeMap = {
-      unit_not_found: 404, quota_exceeded: 409, override_code_invalid: 403,
+      unit_not_found: 404, quota_exceeded: 409, spot_full: 409, override_code_invalid: 403,
       override_reason_required: 400, invalid_plate: 400, invalid_region: 400,
     };
     if (codeMap[err.code]) {
-      return res.status(codeMap[err.code]).json({ error: err.code, message: err.message, quota: err.quota });
+      return res.status(codeMap[err.code]).json({ error: err.code, message: err.message, quota: err.quota, spots: err.spots });
     }
     throw err;
   }
