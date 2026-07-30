@@ -168,6 +168,140 @@ router.post('/units', async (req, res) => {
   }
 });
 
+// --- Bulk unit import ------------------------------------------------------
+// Idempotent bulk load of the building's real unit registry (~1520 residential
+// + commercial tenants). Accepts either a JSON array of unit objects under
+// `units`, or raw CSV text under `csv` (header row with columns like
+// unitNumber/unit_number, floor, kind, businessName, businessContact, notes).
+// Existing units are updated in place (matched on unit_number) so re-running the
+// same import is safe. The residential cap is enforced against the combined
+// existing + newly-inserted residential count; rows that would breach it, or are
+// otherwise invalid, are reported per-row without aborting the whole import.
+function parseCsv(text) {
+  // Minimal RFC-4180-ish parser: handles quoted fields, embedded commas/quotes,
+  // and CRLF/LF line endings. Good enough for an operator-provided unit list.
+  const rows = [];
+  let field = '';
+  let record = [];
+  let inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQuotes) {
+      if (c === '"') {
+        if (text[i + 1] === '"') { field += '"'; i++; } else { inQuotes = false; }
+      } else { field += c; }
+    } else if (c === '"') {
+      inQuotes = true;
+    } else if (c === ',') {
+      record.push(field); field = '';
+    } else if (c === '\n' || c === '\r') {
+      if (c === '\r' && text[i + 1] === '\n') i++;
+      record.push(field); field = '';
+      if (record.length > 1 || record[0] !== '') rows.push(record);
+      record = [];
+    } else {
+      field += c;
+    }
+  }
+  if (field !== '' || record.length) { record.push(field); if (record.length > 1 || record[0] !== '') rows.push(record); }
+  if (!rows.length) return [];
+  const norm = (h) => h.trim().toLowerCase().replace(/[\s_-]+/g, '');
+  const header = rows[0].map(norm);
+  const alias = {
+    unitnumber: 'unitNumber', unit: 'unitNumber', number: 'unitNumber',
+    floor: 'floor', kind: 'kind', type: 'kind',
+    businessname: 'businessName', business: 'businessName',
+    businesscontact: 'businessContact', contact: 'businessContact',
+    notes: 'notes', note: 'notes',
+  };
+  return rows.slice(1).map((r) => {
+    const obj = {};
+    header.forEach((h, idx) => {
+      const key = alias[h];
+      if (key) obj[key] = (r[idx] ?? '').trim();
+    });
+    return obj;
+  });
+}
+
+router.post('/units/import', async (req, res) => {
+  const body = req.body || {};
+  let rows;
+  if (Array.isArray(body.units)) {
+    rows = body.units;
+  } else if (typeof body.csv === 'string') {
+    rows = parseCsv(body.csv);
+  } else {
+    return res.status(400).json({ error: 'units_or_csv_required' });
+  }
+  if (!rows.length) return res.status(400).json({ error: 'no_rows' });
+  if (rows.length > 5000) return res.status(413).json({ error: 'too_many_rows' });
+
+  // Establish how much residential headroom remains before the cap.
+  const existing = await db.query(
+    `SELECT COUNT(*)::int AS n FROM units WHERE kind = 'residential'`
+  );
+  const existingNumbers = await db.query(`SELECT unit_number FROM units`);
+  const known = new Set(existingNumbers.rows.map((r) => r.unit_number));
+  let residentialRoom = config.residentialUnitCap - existing.rows[0].n;
+
+  const result = { inserted: 0, updated: 0, failed: 0, errors: [] };
+  const seen = new Set();
+
+  await db.withTransaction(async (client) => {
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i] || {};
+      const line = i + 1; // 1-based row index within the supplied data
+      const unitNumber = String(row.unitNumber ?? '').trim();
+      if (!unitNumber) {
+        result.failed++; result.errors.push({ line, unitNumber: null, error: 'unit_number_required' });
+        continue;
+      }
+      if (seen.has(unitNumber)) {
+        result.failed++; result.errors.push({ line, unitNumber, error: 'duplicate_in_import' });
+        continue;
+      }
+      seen.add(unitNumber);
+      const kind = row.kind === 'commercial' ? 'commercial' : 'residential';
+      const businessName = (row.businessName ?? '').trim();
+      if (kind === 'commercial' && !businessName) {
+        result.failed++; result.errors.push({ line, unitNumber, error: 'business_name_required' });
+        continue;
+      }
+      const isNew = !known.has(unitNumber);
+      // Only brand-new residential units consume cap headroom.
+      if (isNew && kind === 'residential') {
+        if (residentialRoom <= 0) {
+          result.failed++;
+          result.errors.push({ line, unitNumber, error: 'residential_cap_reached' });
+          continue;
+        }
+        residentialRoom--;
+      }
+      const floorVal = row.floor === '' || row.floor === undefined || row.floor === null
+        ? null : parseInt(row.floor, 10);
+      const floor = Number.isFinite(floorVal) ? floorVal : null;
+      const notes = (row.notes ?? '').trim() || null;
+      const bContact = kind === 'commercial' ? ((row.businessContact ?? '').trim() || null) : null;
+      const bName = kind === 'commercial' ? businessName : null;
+      // Upsert keeps the import idempotent: a re-run updates in place.
+      const r = await client.query(
+        `INSERT INTO units (unit_number, floor, notes, kind, business_name, business_contact)
+         VALUES ($1,$2,$3,$4,$5,$6)
+         ON CONFLICT (unit_number) DO UPDATE SET
+           floor = EXCLUDED.floor, notes = EXCLUDED.notes, kind = EXCLUDED.kind,
+           business_name = EXCLUDED.business_name, business_contact = EXCLUDED.business_contact
+         RETURNING (xmax = 0) AS inserted`,
+        [unitNumber, floor, notes, kind, bName, bContact]
+      );
+      if (r.rows[0].inserted) result.inserted++; else result.updated++;
+      known.add(unitNumber);
+    }
+  });
+
+  res.status(200).json({ ok: true, ...result });
+});
+
 router.post('/units/:unitNumber/residents', async (req, res) => {
   const { fullName, email, phone, isPrimary } = req.body || {};
   const unit = await db.query(`SELECT id FROM units WHERE unit_number = $1`, [req.params.unitNumber]);

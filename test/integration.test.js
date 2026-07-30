@@ -738,3 +738,56 @@ test('the print sheet is Letter-sized and embeds a signed QR', async () => {
   assert.ok(printed.text.includes('PRN333'));
   assert.ok(printed.text.includes('Expires'));
 });
+
+test('bulk unit import: JSON array, CSV, idempotent re-run, and per-row errors', async () => {
+  const mgr = makeClient();
+  await mgr('POST', '/api/auth/login', { username: 'manager1', password: 'changeme123' });
+
+  // 1) JSON array: two new residential units + one new commercial tenant.
+  const first = await mgr('POST', '/api/admin/units/import', {
+    units: [
+      { unitNumber: 'B-201', floor: 2, kind: 'residential' },
+      { unitNumber: 'B-202', floor: 2 }, // kind defaults to residential
+      { unitNumber: 'C-301', kind: 'commercial', businessName: 'Nook Books', businessContact: 'x@y.z' },
+    ],
+  });
+  assert.equal(first.status, 200);
+  assert.equal(first.body.inserted, 3);
+  assert.equal(first.body.updated, 0);
+  assert.equal(first.body.failed, 0);
+
+  // The commercial unit is queryable and carries its business name.
+  const look = await mgr('GET', '/api/units?q=C-301');
+  assert.ok(look.body.some((u) => u.unit_number === 'C-301' && u.business_name === 'Nook Books'));
+
+  // 2) Re-running the same rows updates in place (idempotent), not duplicates.
+  const rerun = await mgr('POST', '/api/admin/units/import', {
+    units: [{ unitNumber: 'B-201', floor: 9, kind: 'residential' }],
+  });
+  assert.equal(rerun.body.inserted, 0);
+  assert.equal(rerun.body.updated, 1);
+
+  // 3) CSV import with a header row, aliased column names, and error rows.
+  const csv = [
+    'unit_number,floor,type,business name',
+    'B-203,3,residential,',
+    ',4,residential,',                       // missing unit number -> error
+    'C-302,1,commercial,',                   // commercial without business name -> error
+    'B-203,5,residential,',                  // duplicate within the same import -> error
+    'C-303,1,commercial,Deli Corner',        // valid commercial
+  ].join('\n');
+  const viaCsv = await mgr('POST', '/api/admin/units/import', { csv });
+  assert.equal(viaCsv.status, 200);
+  assert.equal(viaCsv.body.inserted, 2); // B-203 and C-303
+  assert.equal(viaCsv.body.failed, 3);
+  const errKinds = viaCsv.body.errors.map((e) => e.error).sort();
+  assert.deepEqual(errKinds, ['business_name_required', 'duplicate_in_import', 'unit_number_required']);
+
+  // 4) A missing body is rejected; non-management is forbidden.
+  const empty = await mgr('POST', '/api/admin/units/import', {});
+  assert.equal(empty.status, 400);
+  const sec = makeClient();
+  await sec('POST', '/api/auth/login', { username: 'security1', password: 'changeme123' });
+  const denied = await sec('POST', '/api/admin/units/import', { units: [{ unitNumber: 'Z-1' }] });
+  assert.equal(denied.status, 403);
+});

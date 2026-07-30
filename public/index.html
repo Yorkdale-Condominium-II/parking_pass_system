@@ -225,6 +225,16 @@
         <button>Add unit</button>
         <p class="msg" id="unitMsg"></p>
       </form>
+      <form id="unitImportForm" class="card">
+        <h2>Bulk import units</h2>
+        <p class="hint">Upload a CSV, or paste rows below. Columns: <code>unit_number, floor, kind, business_name, business_contact, notes</code> (only <code>unit_number</code> is required; <code>kind</code> defaults to residential). Re-running is safe — existing units are updated in place.</p>
+        <label>CSV file <input type="file" id="unitImportFile" accept=".csv,text/csv"></label>
+        <label>…or paste CSV
+          <textarea name="csv" id="unitImportText" rows="6" placeholder="unit_number,floor,kind,business_name&#10;1204,12,residential,&#10;C-101,1,commercial,Corner Cafe"></textarea>
+        </label>
+        <button>Import units</button>
+        <p class="msg" id="unitImportMsg"></p>
+      </form>
     </div>
 
     <div class="card" id="manageUsersCard">

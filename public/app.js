@@ -412,6 +412,33 @@ $('#unitForm').onsubmit = async (e) => {
     $('#commercialFields').hidden = true;
   } catch (err) { $('#unitMsg').textContent = err.message; }
 };
+// A chosen CSV file populates the textarea so the operator can eyeball it first.
+const unitImportFile = $('#unitImportFile');
+if (unitImportFile) {
+  unitImportFile.addEventListener('change', async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    $('#unitImportText').value = await file.text();
+  });
+}
+const unitImportForm = $('#unitImportForm');
+if (unitImportForm) {
+  unitImportForm.onsubmit = async (e) => {
+    e.preventDefault();
+    const csv = new FormData(e.target).get('csv');
+    if (!csv || !csv.trim()) { $('#unitImportMsg').textContent = 'Choose a file or paste CSV first.'; return; }
+    try {
+      const r = await api('/admin/units/import', { method: 'POST', body: { csv } });
+      let msg = `Imported: ${r.inserted} added, ${r.updated} updated, ${r.failed} skipped.`;
+      if (r.errors && r.errors.length) {
+        msg += ' — ' + r.errors.slice(0, 5)
+          .map((x) => `row ${x.line}${x.unitNumber ? ' (' + x.unitNumber + ')' : ''}: ${x.error}`).join('; ')
+          + (r.errors.length > 5 ? ` …and ${r.errors.length - 5} more.` : '');
+      }
+      $('#unitImportMsg').textContent = msg;
+    } catch (err) { $('#unitImportMsg').textContent = err.message; }
+  };
+}
 async function loadOverrideCode() {
   try {
     const r = await api('/admin/override-code');

@@ -39,6 +39,12 @@ Implemented and tested:
 - **Open Desk kiosk** (`/desk.html`): issue with officer dropdown + password,
   **or** start a ~30-min **desk session via Google/Microsoft** and skip
   per-pass passwords.
+- **Bulk unit import** (`POST /api/admin/units/import`, management-only): load
+  the real unit registry from a JSON array (`units`) or CSV text (`csv`,
+  header row, aliased columns). Idempotent upsert on `unit_number`; enforces the
+  residential cap against combined existing + new; reports per-row errors
+  (missing number, duplicate-in-import, commercial-without-business-name,
+  cap-reached) without aborting. UI on the Manager console ("Bulk import units").
 - **Yorkdale Manager** console: settings (company/condo name), manage users
   (create/activate/deactivate/reset pw/history), pass + sign-in audit logs,
   weekly override code, data export (CSV/XLSX/PDF), year-end archive & clear,
