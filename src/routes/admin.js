@@ -175,6 +175,27 @@ router.get('/users/:id/history', async (req, res) => {
 });
 
 // --- Units & unit mapping --------------------------------------------------
+// Full unit registry for the "All units" table. Includes the primary
+// resident's name/phone/email (the unit owner) when one is on file — those
+// columns are placeholders until owner details are captured.
+router.get('/units', async (req, res) => {
+  const r = await db.query(
+    `SELECT u.id, u.unit_number, u.floor, u.kind, u.business_name,
+            owner.full_name AS owner_name, owner.phone AS owner_phone, owner.email AS owner_email
+       FROM units u
+       LEFT JOIN LATERAL (
+         SELECT full_name, phone, email
+           FROM residents
+          WHERE unit_id = u.id
+          ORDER BY is_primary DESC, created_at ASC
+          LIMIT 1
+       ) owner ON TRUE
+      ORDER BY u.kind, u.floor NULLS LAST, u.unit_number
+      LIMIT 5000`
+  );
+  res.json(r.rows);
+});
+
 router.post('/units', async (req, res) => {
   const { unitNumber, floor, notes, kind, businessName, businessContact } = req.body || {};
   if (!unitNumber) return res.status(400).json({ error: 'unit_number_required' });

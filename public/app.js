@@ -64,7 +64,7 @@ function showView(name) {
   if (el) el.hidden = false;
   document.querySelectorAll('#nav button').forEach((b) => b.classList.toggle('active', b.dataset.view === name));
   if (name === 'board') loadBoard();
-  if (name === 'admin') { loadAudit(); loadAuthAudit(); loadOverrideCode(); loadExportDatasets(); loadYearEnd(); loadUsers(); $('#orgNameInput').value = orgName; }
+  if (name === 'admin') { loadAudit(); loadAuthAudit(); loadOverrideCode(); loadExportDatasets(); loadYearEnd(); loadUsers(); loadUnitsList(); $('#orgNameInput').value = orgName; }
   if (name === 'issue') { loadUnits(); loadSpotsBadge(); }
   if (name === 'requests') loadRequests();
   if (name === 'spots') loadSpots();
@@ -528,8 +528,42 @@ $('#unitForm').onsubmit = async (e) => {
     } });
     $('#unitMsg').textContent = 'Unit added.'; e.target.reset();
     $('#commercialFields').hidden = true;
+    loadUnitsList();
   } catch (err) { $('#unitMsg').textContent = err.message; }
 };
+// --- All units table ---
+let allUnits = [];
+async function loadUnitsList() {
+  try {
+    allUnits = await api('/admin/units');
+    renderUnitsTable();
+  } catch (err) { $('#unitsTable').innerHTML = `<p class="msg">${err.message}</p>`; }
+}
+function renderUnitsTable() {
+  const q = ($('#unitsFilter').value || '').trim().toLowerCase();
+  const rows = q
+    ? allUnits.filter((u) => [u.unit_number, u.floor, u.kind, u.business_name, u.owner_name]
+        .some((v) => String(v ?? '').toLowerCase().includes(q)))
+    : allUnits;
+  $('#unitsCount').textContent = `${rows.length} unit${rows.length === 1 ? '' : 's'}${q ? ` (of ${allUnits.length})` : ''}`;
+  if (!rows.length) { $('#unitsTable').innerHTML = '<p>No units yet. Add one above or bulk-import.</p>'; return; }
+  $('#unitsTable').innerHTML = '<div style="overflow-x:auto"><table>'
+    + '<tr><th>Unit</th><th>Floor</th><th>Type</th><th>Business</th><th>Owner</th><th>Owner phone</th><th>Owner email</th></tr>'
+    + rows.map((u) => `<tr>
+        <td>${u.unit_number}</td>
+        <td>${u.floor ?? '—'}</td>
+        <td>${u.kind === 'commercial' ? 'Commercial' : 'Residential'}</td>
+        <td>${u.business_name || '—'}</td>
+        <td>${u.owner_name || '—'}</td>
+        <td>${u.owner_phone || '—'}</td>
+        <td>${u.owner_email || '—'}</td>
+      </tr>`).join('') + '</table></div>';
+}
+const _refreshUnits = $('#refreshUnits');
+if (_refreshUnits) _refreshUnits.onclick = loadUnitsList;
+const _unitsFilter = $('#unitsFilter');
+if (_unitsFilter) _unitsFilter.addEventListener('input', renderUnitsTable);
+
 // Holds a selected Excel workbook (base64) until import; CSV/text files are
 // previewed in the textarea instead.
 let unitImportXlsx = null;
@@ -579,6 +613,7 @@ if (unitImportForm) {
       $('#unitImportMsg').textContent = msg;
       unitImportXlsx = null;
       unitImportFile.value = '';
+      loadUnitsList();
     } catch (err) { $('#unitImportMsg').textContent = err.message; }
   };
 }

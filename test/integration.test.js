@@ -1004,6 +1004,30 @@ test('manage users: delete removes a clean account but protects one with history
   assert.equal(forbidden.body.error, 'superuser_required');
 });
 
+test('admin units list returns the registry with owner columns', async () => {
+  const mgr = makeClient();
+  await mgr('POST', '/api/auth/login', { username: 'manager1', password: 'changeme123' });
+  // Seed a unit and a primary resident (the "owner") to exercise the columns.
+  await mgr('POST', '/api/admin/units', { unitNumber: 'LIST-1', floor: 4, kind: 'residential' });
+  await mgr('POST', '/api/admin/units/LIST-1/residents', {
+    fullName: 'Olivia Owner', email: 'olivia@example.com', phone: '416-555-0199', isPrimary: true,
+  });
+  const list = await mgr('GET', '/api/admin/units');
+  assert.equal(list.status, 200);
+  const row = list.body.find((u) => u.unit_number === 'LIST-1');
+  assert.ok(row, 'the new unit should be listed');
+  assert.equal(row.floor, 4);
+  assert.equal(row.owner_name, 'Olivia Owner');
+  assert.equal(row.owner_phone, '416-555-0199');
+  assert.equal(row.owner_email, 'olivia@example.com');
+
+  // Security cannot read the admin units list.
+  const sec = makeClient();
+  await sec('POST', '/api/auth/login', { username: 'security1', password: 'changeme123' });
+  const denied = await sec('GET', '/api/admin/units');
+  assert.equal(denied.status, 403);
+});
+
 test('shutdown endpoint is management-only (and a no-op under test)', async () => {
   // Non-management is refused.
   const sec = makeClient();

@@ -256,6 +256,15 @@
         <button>Add unit</button>
         <p class="msg" id="unitMsg"></p>
       </form>
+      <div class="card" id="unitsListCard">
+        <h2>All units</h2>
+        <div class="btn-row" style="margin-bottom:10px">
+          <button type="button" id="refreshUnits">Refresh</button>
+          <input id="unitsFilter" placeholder="Filter by unit, floor, business…" style="flex:1;min-width:180px;padding:8px;border:1px solid var(--line);border-radius:6px">
+        </div>
+        <p class="hint" id="unitsCount"></p>
+        <div id="unitsTable"></div>
+      </div>
       <form id="unitImportForm" class="card">
         <h2>Bulk import units</h2>
         <p class="hint">Upload an <b>Excel (.xlsx)</b> or <b>CSV</b> file, or paste rows below. Re-running is safe — existing units are updated in place. Two layouts are accepted:</p>
