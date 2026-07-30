@@ -298,3 +298,16 @@ UPDATE users
        last_name  = NULLIF(regexp_replace(full_name, '^\S+\s*', ''), '')
  WHERE first_name IS NULL;
 COMMIT;
+
+-- ============================================================================
+--  v7 migration — key/value app settings (e.g. company / condo name).
+-- ============================================================================
+BEGIN;
+CREATE TABLE IF NOT EXISTS settings (
+    key        TEXT PRIMARY KEY,
+    value      TEXT,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+INSERT INTO settings (key, value) VALUES ('org_name', 'Yorkdale Condominium II')
+  ON CONFLICT (key) DO NOTHING;
+COMMIT;

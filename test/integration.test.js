@@ -630,6 +630,28 @@ test('clear-logs wipes audit history but keeps live passes', async () => {
   assert.equal(v.body.verdict, 'VALID');
 });
 
+test('org/condo name is readable and management can change it', async () => {
+  const anon = makeClient();
+  const def = await anon('GET', '/api/settings');
+  assert.equal(def.status, 200);
+  assert.ok(def.body.orgName);
+
+  const mgr = makeClient();
+  await mgr('POST', '/api/auth/login', { username: 'manager1', password: 'changeme123' });
+  const set = await mgr('PATCH', '/api/admin/settings', { orgName: 'Maple Grove Towers' });
+  assert.equal(set.status, 200);
+  assert.equal(set.body.orgName, 'Maple Grove Towers');
+
+  const after = await anon('GET', '/api/settings');
+  assert.equal(after.body.orgName, 'Maple Grove Towers');
+
+  // Security cannot change it.
+  const sec = makeClient();
+  await sec('POST', '/api/auth/login', { username: 'security1', password: 'changeme123' });
+  const denied = await sec('PATCH', '/api/admin/settings', { orgName: 'Nope' });
+  assert.equal(denied.status, 403);
+});
+
 test('the print sheet is Letter-sized and embeds a signed QR', async () => {
   const c = makeClient();
   await c('POST', '/api/auth/login', { username: 'security1', password: 'changeme123' });

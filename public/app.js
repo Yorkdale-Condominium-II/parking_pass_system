@@ -11,7 +11,11 @@ const api = async (path, opts = {}) => {
     body: opts.body ? JSON.stringify(opts.body) : undefined,
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw Object.assign(new Error(data.message || data.error || 'error'), { data, status: res.status });
+  if (!res.ok) {
+    const msg = data.message || data.error ||
+      (res.status === 404 ? 'Not found (is the server running the latest code? restart it)' : 'HTTP ' + res.status);
+    throw Object.assign(new Error(msg), { data, status: res.status });
+  }
   return data;
 };
 
@@ -24,6 +28,17 @@ const VIEW_LABELS = { lookup: 'Lookup', issue: 'Issue Pass', verify: 'Verify', s
 let currentUser = null;
 let unitIndex = {};   // unit_number -> {kind, business_name}
 let regionData = null;
+let orgName = 'Yorkdale Condominium II';
+
+async function loadSettings() {
+  try { orgName = (await api('/settings')).orgName || orgName; } catch {}
+  applyOrgName();
+}
+function applyOrgName() {
+  const brand = document.querySelector('#topbar .brand');
+  if (brand) brand.textContent = `🅿️ ${orgName}`;
+  if (currentUser) $('#whoami').innerHTML = `<b>${orgName}</b> · ${currentUser.name}`;
+}
 
 function showView(name) {
   document.querySelectorAll('.view').forEach((v) => (v.hidden = true));
@@ -31,7 +46,7 @@ function showView(name) {
   if (el) el.hidden = false;
   document.querySelectorAll('#nav button').forEach((b) => b.classList.toggle('active', b.dataset.view === name));
   if (name === 'board') loadBoard();
-  if (name === 'admin') { loadAudit(); loadAuthAudit(); loadOverrideCode(); loadExportDatasets(); loadYearEnd(); loadUsers(); }
+  if (name === 'admin') { loadAudit(); loadAuthAudit(); loadOverrideCode(); loadExportDatasets(); loadYearEnd(); loadUsers(); $('#orgNameInput').value = orgName; }
   if (name === 'issue') { loadUnits(); loadSpotsBadge(); }
   if (name === 'requests') loadRequests();
   if (name === 'spots') loadSpots();
@@ -58,8 +73,9 @@ async function enterApp(user) {
   currentUser = user;
   $('#topbar').hidden = false;
   $('#view-login').hidden = true;
-  $('#whoami').textContent = `${user.name} · ${user.role}`;
   await loadRegions();
+  await loadSettings();
+  applyOrgName();
   renderNav();
 }
 
@@ -271,6 +287,18 @@ $('#userForm').onsubmit = async (e) => {
     await api('/admin/users', { method: 'POST', body: { username: f.get('username'), firstName: f.get('firstName'), lastName: f.get('lastName'), role: f.get('role'), password: f.get('password') } });
     $('#userMsg').textContent = 'User created.'; e.target.reset(); loadUsers();
   } catch (err) { $('#userMsg').textContent = err.message; }
+};
+
+// --- Settings (company / condo name) ---
+$('#settingsForm').onsubmit = async (e) => {
+  e.preventDefault();
+  const val = new FormData(e.target).get('orgName').trim();
+  if (!val) return;
+  try {
+    const r = await api('/admin/settings', { method: 'PATCH', body: { orgName: val } });
+    orgName = r.orgName; applyOrgName();
+    $('#settingsMsg').textContent = 'Saved.';
+  } catch (err) { $('#settingsMsg').textContent = err.message; }
 };
 
 // --- Manage users ---

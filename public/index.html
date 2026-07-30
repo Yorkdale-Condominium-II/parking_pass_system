@@ -152,6 +152,16 @@
   <section id="view-admin" class="view" hidden>
     <h1>Yorkdale Manager</h1>
     <div id="yearEndBanner" class="banner" hidden></div>
+
+    <div class="card" id="settingsCard">
+      <h2>Settings</h2>
+      <form id="settingsForm" class="inline">
+        <input name="orgName" id="orgNameInput" placeholder="Company / Condo name" style="max-width:360px">
+        <button>Save name</button>
+      </form>
+      <p class="hint">Shown in the top bar and on the login, desk, and resident pages.</p>
+      <p class="msg" id="settingsMsg"></p>
+    </div>
     <div class="cols">
       <form id="userForm" class="card">
         <h2>Create user</h2>

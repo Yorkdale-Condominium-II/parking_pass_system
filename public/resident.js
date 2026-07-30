@@ -75,4 +75,9 @@ $('#statusForm').onsubmit = async (e) => {
   } catch (err) { $('#statusResult').innerHTML = `<p class="error">${err.message}</p>`; }
 };
 
+fetch('/api/settings').then((r) => r.json()).then((s) => {
+  const b = document.querySelector('#topbar .brand');
+  if (b && s.orgName) b.textContent = '🅿️ ' + s.orgName;
+}).catch(() => {});
+
 loadRegions();

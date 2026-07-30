@@ -85,4 +85,10 @@ $('#deskForm').onsubmit = async (e) => {
   }
 };
 
+fetch('/api/settings').then((r) => r.json()).then((s) => {
+  const b = document.querySelector('#topbar .brand');
+  if (b && s.orgName) b.textContent = '🅿️ ' + s.orgName;
+  if (s.orgName) document.title = s.orgName + ' — Visitor Pass Desk';
+}).catch(() => {});
+
 loadRefData();

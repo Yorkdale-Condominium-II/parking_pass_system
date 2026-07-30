@@ -281,6 +281,18 @@ router.post('/year-end/clear', async (req, res) => {
   res.json({ ok: true, deleted });
 });
 
+// --- Display settings (company / condo name) -------------------------------
+router.patch('/settings', async (req, res) => {
+  const { orgName } = req.body || {};
+  if (!orgName || !orgName.trim()) return res.status(400).json({ error: 'org_name_required' });
+  await db.query(
+    `INSERT INTO settings (key, value, updated_at) VALUES ('org_name', $1, now())
+     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
+    [orgName.trim()]
+  );
+  res.json({ ok: true, orgName: orgName.trim() });
+});
+
 // --- Clear all logs (full archive & clear) ---------------------------------
 // Deletes ALL audit logs plus completed/historical passes and decided requests.
 // Currently-live and future-scheduled passes and still-pending requests are
