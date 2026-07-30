@@ -437,13 +437,33 @@ $('#unitForm').onsubmit = async (e) => {
     $('#commercialFields').hidden = true;
   } catch (err) { $('#unitMsg').textContent = err.message; }
 };
-// A chosen CSV file populates the textarea so the operator can eyeball it first.
+// Holds a selected Excel workbook (base64) until import; CSV/text files are
+// previewed in the textarea instead.
+let unitImportXlsx = null;
+const isXlsxName = (name) => /\.xlsx?$/i.test(name || '');
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(',')[1]); // strip data: prefix
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
 const unitImportFile = $('#unitImportFile');
 if (unitImportFile) {
   unitImportFile.addEventListener('change', async (e) => {
     const file = e.target.files && e.target.files[0];
+    unitImportXlsx = null;
     if (!file) return;
-    $('#unitImportText').value = await file.text();
+    if (isXlsxName(file.name)) {
+      // Excel: don't dump binary into the textarea — parse it on the server.
+      unitImportXlsx = await fileToBase64(file);
+      $('#unitImportText').value = '';
+      $('#unitImportMsg').textContent = `Excel file ready: ${file.name}. Click “Import units”.`;
+    } else {
+      $('#unitImportText').value = await file.text();
+      $('#unitImportMsg').textContent = '';
+    }
   });
 }
 const unitImportForm = $('#unitImportForm');
@@ -451,9 +471,12 @@ if (unitImportForm) {
   unitImportForm.onsubmit = async (e) => {
     e.preventDefault();
     const csv = new FormData(e.target).get('csv');
-    if (!csv || !csv.trim()) { $('#unitImportMsg').textContent = 'Choose a file or paste CSV first.'; return; }
+    let body;
+    if (unitImportXlsx) body = { xlsxBase64: unitImportXlsx };
+    else if (csv && csv.trim()) body = { csv };
+    else { $('#unitImportMsg').textContent = 'Choose a file or paste CSV first.'; return; }
     try {
-      const r = await api('/admin/units/import', { method: 'POST', body: { csv } });
+      const r = await api('/admin/units/import', { method: 'POST', body });
       let msg = `Imported: ${r.inserted} added, ${r.updated} updated, ${r.failed} skipped.`;
       if (r.errors && r.errors.length) {
         msg += ' — ' + r.errors.slice(0, 5)
@@ -461,6 +484,8 @@ if (unitImportForm) {
           + (r.errors.length > 5 ? ` …and ${r.errors.length - 5} more.` : '');
       }
       $('#unitImportMsg').textContent = msg;
+      unitImportXlsx = null;
+      unitImportFile.value = '';
     } catch (err) { $('#unitImportMsg').textContent = err.message; }
   };
 }
@@ -637,7 +662,13 @@ $('#yearEndBox').addEventListener('click', async (e) => {
 // --- Account (all roles) ---
 const ROLE_LABELS = { security: 'Security', management: 'Management', board: 'Board' };
 async function loadAccount() {
-  const a = await api('/auth/account');
+  let a;
+  try {
+    a = await api('/auth/account');
+  } catch (err) {
+    $('#accountMsg').textContent = `Could not load your details: ${err.message}`;
+    return;
+  }
   // Populate the editable details form.
   const f = $('#accountForm');
   f.username.value = a.username || '';

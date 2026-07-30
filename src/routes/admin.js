@@ -176,13 +176,38 @@ router.post('/units', async (req, res) => {
 
 // --- Bulk unit import ------------------------------------------------------
 // Idempotent bulk load of the building's real unit registry (~1520 residential
-// + commercial tenants). Accepts either a JSON array of unit objects under
-// `units`, or raw CSV text under `csv` (header row with columns like
-// unitNumber/unit_number, floor, kind, businessName, businessContact, notes).
+// + commercial tenants). Accepts a JSON array of unit objects under `units`,
+// raw CSV text under `csv`, or a base64-encoded Excel workbook under
+// `xlsxBase64` — all with a header row whose columns map to
+// unitNumber/unit_number, floor, kind, businessName, businessContact, notes.
 // Existing units are updated in place (matched on unit_number) so re-running the
 // same import is safe. The residential cap is enforced against the combined
 // existing + newly-inserted residential count; rows that would breach it, or are
 // otherwise invalid, are reported per-row without aborting the whole import.
+
+// Map a header row + data rows (a matrix of cell values) into unit objects,
+// resolving flexible/aliased column names. Shared by the CSV and Excel parsers.
+function matrixToObjects(matrix) {
+  if (!matrix.length) return [];
+  const norm = (h) => String(h ?? '').trim().toLowerCase().replace(/[\s_-]+/g, '');
+  const header = matrix[0].map(norm);
+  const alias = {
+    unitnumber: 'unitNumber', unit: 'unitNumber', number: 'unitNumber',
+    floor: 'floor', kind: 'kind', type: 'kind',
+    businessname: 'businessName', business: 'businessName',
+    businesscontact: 'businessContact', contact: 'businessContact',
+    notes: 'notes', note: 'notes',
+  };
+  return matrix.slice(1).map((r) => {
+    const obj = {};
+    header.forEach((h, idx) => {
+      const key = alias[h];
+      if (key) obj[key] = String(r[idx] ?? '').trim();
+    });
+    return obj;
+  }).filter((o) => Object.keys(o).length); // drop wholly-blank rows
+}
+
 function parseCsv(text) {
   // Minimal RFC-4180-ish parser: handles quoted fields, embedded commas/quotes,
   // and CRLF/LF line endings. Good enough for an operator-provided unit list.
@@ -210,24 +235,27 @@ function parseCsv(text) {
     }
   }
   if (field !== '' || record.length) { record.push(field); if (record.length > 1 || record[0] !== '') rows.push(record); }
-  if (!rows.length) return [];
-  const norm = (h) => h.trim().toLowerCase().replace(/[\s_-]+/g, '');
-  const header = rows[0].map(norm);
-  const alias = {
-    unitnumber: 'unitNumber', unit: 'unitNumber', number: 'unitNumber',
-    floor: 'floor', kind: 'kind', type: 'kind',
-    businessname: 'businessName', business: 'businessName',
-    businesscontact: 'businessContact', contact: 'businessContact',
-    notes: 'notes', note: 'notes',
-  };
-  return rows.slice(1).map((r) => {
-    const obj = {};
-    header.forEach((h, idx) => {
-      const key = alias[h];
-      if (key) obj[key] = (r[idx] ?? '').trim();
-    });
-    return obj;
+  return matrixToObjects(rows);
+}
+
+async function parseXlsx(base64) {
+  // Read the first worksheet of an Excel workbook into the same row objects.
+  const ExcelJS = require('exceljs');
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(Buffer.from(base64, 'base64'));
+  const ws = wb.worksheets[0];
+  if (!ws) return [];
+  const matrix = [];
+  ws.eachRow((row) => {
+    const cells = [];
+    // row.values is 1-indexed (index 0 is unused); flatten to plain cell text.
+    for (let c = 1; c <= ws.columnCount; c++) {
+      const v = row.getCell(c).value;
+      cells.push(v == null ? '' : (typeof v === 'object' && 'text' in v ? v.text : v));
+    }
+    matrix.push(cells);
   });
+  return matrixToObjects(matrix);
 }
 
 router.post('/units/import', async (req, res) => {
@@ -235,10 +263,16 @@ router.post('/units/import', async (req, res) => {
   let rows;
   if (Array.isArray(body.units)) {
     rows = body.units;
+  } else if (typeof body.xlsxBase64 === 'string') {
+    try {
+      rows = await parseXlsx(body.xlsxBase64);
+    } catch (err) {
+      return res.status(400).json({ error: 'invalid_xlsx', message: err.message });
+    }
   } else if (typeof body.csv === 'string') {
     rows = parseCsv(body.csv);
   } else {
-    return res.status(400).json({ error: 'units_or_csv_required' });
+    return res.status(400).json({ error: 'units_csv_or_xlsx_required' });
   }
   if (!rows.length) return res.status(400).json({ error: 'no_rows' });
   if (rows.length > 5000) return res.status(413).json({ error: 'too_many_rows' });

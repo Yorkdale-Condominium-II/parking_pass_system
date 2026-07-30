@@ -103,13 +103,20 @@ router.get('/providers', (req, res) => {
 
 // The signed-in user's own account details (for the Account screen).
 router.get('/account', requireAuth, async (req, res) => {
-  const r = await db.query(
-    `SELECT username, first_name, last_name, full_name, role, email, sso_provider, is_superuser
-       FROM users WHERE id = $1`,
-    [req.user.id]
-  );
-  if (r.rowCount === 0) return res.status(404).json({ error: 'user_not_found' });
-  res.json(r.rows[0]);
+  const core = 'username, first_name, last_name, full_name, role, email, sso_provider';
+  let row;
+  try {
+    const r = await db.query(`SELECT ${core}, is_superuser FROM users WHERE id = $1`, [req.user.id]);
+    row = r.rows[0];
+  } catch (err) {
+    // Tolerate a not-yet-migrated DB (is_superuser missing) so the account
+    // screen still shows what's on file instead of failing to load entirely.
+    if (err.code !== '42703') throw err;
+    const r = await db.query(`SELECT ${core} FROM users WHERE id = $1`, [req.user.id]);
+    row = r.rows[0] ? { ...r.rows[0], is_superuser: false } : undefined;
+  }
+  if (!row) return res.status(404).json({ error: 'user_not_found' });
+  res.json(row);
 });
 
 // Self-service edit of the signed-in user's own account. Username, name, and

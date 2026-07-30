@@ -15,7 +15,7 @@ A continuation guide for picking this project back up in a new session.
 it, `GET /api/settings` returns it (public), and the SPA shows it as a `vX.Y.Z`
 badge in the top-bar header and in the browser tab title. **Bump `package.json`
 with every committed change** so the running build is identifiable at a glance
-(semver: patch for fixes, minor for features). Current: **1.3.0**.
+(semver: patch for fixes, minor for features). Current: **1.4.0**.
 
 ---
 
@@ -50,8 +50,9 @@ Implemented and tested:
   **or** start a ~30-min **desk session via Google/Microsoft** and skip
   per-pass passwords.
 - **Bulk unit import** (`POST /api/admin/units/import`, management-only): load
-  the real unit registry from a JSON array (`units`) or CSV text (`csv`,
-  header row, aliased columns). Idempotent upsert on `unit_number`; enforces the
+  the real unit registry from an Excel workbook (`xlsxBase64`, parsed server-side
+  with exceljs), a JSON array (`units`), or CSV text (`csv`; header row, aliased
+  columns). Idempotent upsert on `unit_number`; enforces the
   residential cap against combined existing + new; reports per-row errors
   (missing number, duplicate-in-import, commercial-without-business-name,
   cap-reached) without aborting. UI on the Manager console ("Bulk import units").

@@ -803,6 +803,36 @@ test('bulk unit import: JSON array, CSV, idempotent re-run, and per-row errors',
   assert.equal(denied.status, 403);
 });
 
+test('bulk unit import: accepts an Excel (.xlsx) workbook', async () => {
+  const ExcelJS = require('exceljs');
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('Units');
+  ws.addRow(['unit_number', 'floor', 'type', 'business name']);
+  ws.addRow(['X-900', 9, 'residential', '']);
+  ws.addRow(['X-901', 9, 'residential', '']);
+  ws.addRow(['C-950', 1, 'commercial', 'Test Bakery']);
+  ws.addRow(['', 3, 'residential', '']); // blank unit number -> error row
+  const xlsxBase64 = Buffer.from(await wb.xlsx.writeBuffer()).toString('base64');
+
+  const mgr = makeClient();
+  await mgr('POST', '/api/auth/login', { username: 'manager1', password: 'changeme123' });
+  const imp = await mgr('POST', '/api/admin/units/import', { xlsxBase64 });
+  assert.equal(imp.status, 200);
+  assert.equal(imp.body.inserted, 3);
+  assert.equal(imp.body.failed, 1);
+  assert.equal(imp.body.errors[0].error, 'unit_number_required');
+
+  // Idempotent: re-importing the same workbook updates in place.
+  const again = await mgr('POST', '/api/admin/units/import', { xlsxBase64 });
+  assert.equal(again.body.inserted, 0);
+  assert.equal(again.body.updated, 3);
+
+  // Garbage base64 is rejected cleanly (not a 500).
+  const bad = await mgr('POST', '/api/admin/units/import', { xlsxBase64: 'bm90LWFuLXhsc3g=' });
+  assert.equal(bad.status, 400);
+  assert.equal(bad.body.error, 'invalid_xlsx');
+});
+
 test('account self-edit: details editable by all; role only by a superuser', async () => {
   // Management (a bootstrapped superuser) can edit details AND change role.
   const mgr = makeClient();

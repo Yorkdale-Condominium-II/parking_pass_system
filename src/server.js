@@ -18,7 +18,9 @@ app.use(helmet({
     },
   },
 }));
-app.use(express.json());
+// Allow sizeable payloads: bulk unit imports can carry a whole Excel workbook
+// (sent base64-encoded) or a large pasted CSV.
+app.use(express.json({ limit: '20mb' }));
 app.use(cookieParser());
 
 // --- API routes ---
@@ -48,10 +50,30 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'internal_error' });
 });
 
-if (require.main === module) {
-  app.listen(config.port, () => {
+// Apply the idempotent schema on boot so the running app is always migrated —
+// even if the separate `npm run migrate` step was skipped or failed (e.g. the
+// DB wasn't ready yet during a one-click launch). Tolerant of failure: a
+// transient DB hiccup logs a warning rather than blocking startup.
+async function ensureSchema() {
+  const fs = require('fs');
+  const db = require('./db');
+  try {
+    const sql = fs.readFileSync(path.join(__dirname, '..', 'db', 'schema.sql'), 'utf8');
+    await db.query(sql);
     // eslint-disable-next-line no-console
-    console.log(`Parking pass system listening on http://localhost:${config.port} (${config.env})`);
+    console.log('✓ Database schema is up to date.');
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn('[warning] Could not apply schema on boot:', err.message);
+  }
+}
+
+if (require.main === module) {
+  ensureSchema().finally(() => {
+    app.listen(config.port, () => {
+      // eslint-disable-next-line no-console
+      console.log(`Parking pass system listening on http://localhost:${config.port} (${config.env})`);
+    });
   });
 }
 
