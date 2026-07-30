@@ -258,7 +258,11 @@
       </form>
       <form id="unitImportForm" class="card">
         <h2>Bulk import units</h2>
-        <p class="hint">Upload an <b>Excel (.xlsx)</b> or <b>CSV</b> file, or paste rows below. Columns: <code>unit_number, floor, kind, business_name, business_contact, notes</code> (only <code>unit_number</code> is required; <code>kind</code> defaults to residential). Re-running is safe — existing units are updated in place.</p>
+        <p class="hint">Upload an <b>Excel (.xlsx)</b> or <b>CSV</b> file, or paste rows below. Re-running is safe — existing units are updated in place. Two layouts are accepted:</p>
+        <ul class="hint" style="margin-top:0">
+          <li><b>List</b> — a header row then one unit per line. Columns: <code>unit_number, floor, kind, business_name, business_contact, notes</code> (only <code>unit_number</code> is required; <code>kind</code> defaults to residential).</li>
+          <li><b>Floor grid</b> — top-left cell <code>Floor Level</code>, then a floor number per column; column A repeats <code>Unit Number</code>, and each cell below is an actual unit number for that floor. Only the unit numbers you list are imported (blank cells are skipped — nothing is filled in).</li>
+        </ul>
         <label>Excel or CSV file <input type="file" id="unitImportFile" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"></label>
         <label>…or paste CSV
           <textarea name="csv" id="unitImportText" rows="6" placeholder="unit_number,floor,kind,business_name&#10;1204,12,residential,&#10;C-101,1,commercial,Corner Cafe"></textarea>

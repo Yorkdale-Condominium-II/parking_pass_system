@@ -203,12 +203,42 @@ router.post('/units', async (req, res) => {
 // existing + newly-inserted residential count; rows that would breach it, or are
 // otherwise invalid, are reported per-row without aborting the whole import.
 
+const normCell = (h) => String(h ?? '').trim().toLowerCase().replace(/[\s_-]+/g, '');
+
+// Grid / floor-plan layout: row 1 is "Floor Level" then a floor number per
+// column; column A is a repeated "Unit Number" label; every other cell holds an
+// actual unit number for that column's floor. Blank cells are skipped, so only
+// the unit numbers actually present are imported (no gaps are filled in). This
+// matches how an operator naturally lays the building out in a spreadsheet.
+function gridToObjects(matrix) {
+  const floors = matrix[0] || [];
+  const out = [];
+  for (let r = 1; r < matrix.length; r++) {
+    const row = matrix[r] || [];
+    for (let c = 1; c < row.length; c++) { // column 0 is the "Unit Number" label
+      const unitNumber = String(row[c] ?? '').trim();
+      if (!unitNumber) continue;           // only import cells that exist
+      const floor = String(floors[c] ?? '').trim();
+      out.push({ unitNumber, floor });
+    }
+  }
+  return out;
+}
+
+// Detect the grid layout: top-left cell mentions "floor" and the first data
+// row's first cell is a "unit number" label.
+function looksLikeGrid(matrix) {
+  return matrix.length > 1
+    && normCell(matrix[0][0]).includes('floor')
+    && normCell(matrix[1][0]) === 'unitnumber';
+}
+
 // Map a header row + data rows (a matrix of cell values) into unit objects,
 // resolving flexible/aliased column names. Shared by the CSV and Excel parsers.
 function matrixToObjects(matrix) {
   if (!matrix.length) return [];
-  const norm = (h) => String(h ?? '').trim().toLowerCase().replace(/[\s_-]+/g, '');
-  const header = matrix[0].map(norm);
+  if (looksLikeGrid(matrix)) return gridToObjects(matrix);
+  const header = matrix[0].map(normCell);
   const alias = {
     unitnumber: 'unitNumber', unit: 'unitNumber', number: 'unitNumber',
     floor: 'floor', kind: 'kind', type: 'kind',

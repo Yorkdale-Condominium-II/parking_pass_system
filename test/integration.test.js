@@ -840,6 +840,35 @@ test('bulk unit import: accepts an Excel (.xlsx) workbook', async () => {
   assert.equal(bad.body.error, 'invalid_xlsx');
 });
 
+test('bulk unit import: accepts a floor-grid layout (floors across, units down)', async () => {
+  const ExcelJS = require('exceljs');
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('Sheet1');
+  // Row 1: "Floor Level" then floor numbers; each column below holds that
+  // floor's unit numbers. Floor 7 deliberately has only 3 units (no gap-filling).
+  ws.addRow(['Floor Level', 7, 8]);
+  ws.addRow(['Unit Number', 701, 801]);
+  ws.addRow(['Unit Number', 702, 802]);
+  ws.addRow(['Unit Number', 703, 803]);
+  ws.addRow(['Unit Number', '', 804]); // floor 7 stops at 703; floor 8 has a 4th
+  const xlsxBase64 = Buffer.from(await wb.xlsx.writeBuffer()).toString('base64');
+
+  const mgr = makeClient();
+  await mgr('POST', '/api/auth/login', { username: 'manager1', password: 'changeme123' });
+  const imp = await mgr('POST', '/api/admin/units/import', { xlsxBase64 });
+  assert.equal(imp.status, 200);
+  assert.equal(imp.body.inserted, 7); // 3 on floor 7 + 4 on floor 8, blank skipped
+  assert.equal(imp.body.failed, 0);
+
+  // The floor is taken from the top row, and only listed units exist (no 704).
+  const units = await mgr('GET', '/api/units?q=70');
+  const u703 = units.body.find((u) => u.unit_number === '703');
+  assert.ok(u703, 'unit 703 should exist');
+  assert.ok(!units.body.some((u) => u.unit_number === '704'), 'unit 704 must NOT be invented');
+  const floor = (await db.query(`SELECT floor FROM units WHERE unit_number = '801'`)).rows[0].floor;
+  assert.equal(floor, 8, 'floor should come from the top row of the grid');
+});
+
 test('account self-edit: details editable by all; role only by a superuser', async () => {
   // Management (a bootstrapped superuser) can edit details AND change role.
   const mgr = makeClient();
