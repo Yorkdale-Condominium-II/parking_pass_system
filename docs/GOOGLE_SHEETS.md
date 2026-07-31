@@ -40,6 +40,7 @@ Events mirrored: **issued**, **revoked**, **vacated**.
    const DATE_KEYS = ['at', 'issuedAt', 'startsAt', 'expiresAt'];
    const DATE_COLS = [1, 8, 9, 10];
    const DATE_FORMAT = 'dd mmm yyyy';
+   const MIN_WIDTH = 125; // columns auto-fit, but never narrower than this
 
    function doPost(e) {
      try {
@@ -55,10 +56,18 @@ Events mirrored: **issued**, **revoked**, **vacated**.
          if (DATE_KEYS.indexOf(k) !== -1) { var d = new Date(v); return isNaN(d.getTime()) ? v : d; }
          return v;
        }));
-       sheet.autoResizeColumns(1, KEYS.length); // keep widths fitting the data
+       fitColumns(sheet, KEYS.length); // keep widths fitting the data (min 125)
        return ContentService.createTextOutput('ok');
      } catch (err) {
        return ContentService.createTextOutput('error: ' + err);
+     }
+   }
+
+   // Auto-fit each column, but never narrower than MIN_WIDTH.
+   function fitColumns(sheet, n) {
+     sheet.autoResizeColumns(1, n);
+     for (var c = 1; c <= n; c++) {
+       if (sheet.getColumnWidth(c) < MIN_WIDTH) sheet.setColumnWidth(c, MIN_WIDTH);
      }
    }
 
@@ -84,7 +93,7 @@ Events mirrored: **issued**, **revoked**, **vacated**.
      });
      // Columns C..N: centered and bold.
      sheet.getRange(1, 3, maxRows, n - 2).setHorizontalAlignment('center').setFontWeight('bold');
-     sheet.autoResizeColumns(1, n);
+     fitColumns(sheet, n);
    }
 
    // Run this ONCE from the editor (Run ▸ formatNow) to reformat existing rows.
