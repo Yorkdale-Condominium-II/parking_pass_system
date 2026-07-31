@@ -20,9 +20,9 @@ Events mirrored: **issued**, **revoked**, **vacated**.
 2. **Open the script editor.** In the sheet: **Extensions → Apps Script**.
 
 3. **Paste this script** (replace the whole default `Code.gs`). It appends a row
-   per event and keeps the sheet formatted (bold centered UPPER-CASE headers,
-   column A shown as `DD MMM YYYY`, data columns C–N centered/bold, widths
-   auto-fit).
+   per event and keeps the sheet formatted (bold centered UPPER-CASE headers;
+   the date columns A, H, I, J shown as `DD MMM YYYY`; data columns C–N
+   centered/bold; widths auto-fit).
 
    ```javascript
    // Optional: set this to the same value as SHEETS_WEBHOOK_TOKEN in .env.
@@ -36,6 +36,10 @@ Events mirrored: **issued**, **revoked**, **vacated**.
    const HEADERS = ['AT', 'EVENT', 'UNIT', 'KIND', 'PLATE', 'VISITOR', 'ISSUER',
                     'ISSUED AT', 'STARTS AT', 'EXPIRES AT', 'SHORT CODE',
                     'OVERRIDE', 'SPOT OVERRIDE', 'PASS ID'];
+   // Date columns: A=1 (at), H=8 (issuedAt), I=9 (startsAt), J=10 (expiresAt).
+   const DATE_KEYS = ['at', 'issuedAt', 'startsAt', 'expiresAt'];
+   const DATE_COLS = [1, 8, 9, 10];
+   const DATE_FORMAT = 'dd mmm yyyy';
 
    function doPost(e) {
      try {
@@ -48,7 +52,7 @@ Events mirrored: **issued**, **revoked**, **vacated**.
        sheet.appendRow(KEYS.map(function (k) {
          var v = data[k];
          if (v === undefined || v === null) return '';
-         if (k === 'at') { var d = new Date(v); return isNaN(d.getTime()) ? v : d; }
+         if (DATE_KEYS.indexOf(k) !== -1) { var d = new Date(v); return isNaN(d.getTime()) ? v : d; }
          return v;
        }));
        sheet.autoResizeColumns(1, KEYS.length); // keep widths fitting the data
@@ -67,16 +71,17 @@ Events mirrored: **issued**, **revoked**, **vacated**.
      sheet.getRange(1, 1, 1, n).setValues([HEADERS])
           .setFontWeight('bold').setHorizontalAlignment('center');
      sheet.setFrozenRows(1);
-     // Column A → real dates shown as DD MMM YYYY.
+     // Date columns (A, H, I, J) → real dates shown as DD MMM YYYY.
      const lastRow = sheet.getLastRow();
-     if (lastRow > 1) {
-       const a = sheet.getRange(2, 1, lastRow - 1, 1);
-       const vals = a.getValues().map(function (r) {
-         var d = new Date(r[0]); return [isNaN(d.getTime()) ? r[0] : d];
-       });
-       a.setValues(vals);
-     }
-     sheet.getRange('A:A').setNumberFormat('dd mmm yyyy');
+     DATE_COLS.forEach(function (col) {
+       if (lastRow > 1) {
+         const rng = sheet.getRange(2, col, lastRow - 1, 1);
+         rng.setValues(rng.getValues().map(function (r) {
+           var d = new Date(r[0]); return [isNaN(d.getTime()) ? r[0] : d];
+         }));
+       }
+       sheet.getRange(1, col, maxRows, 1).setNumberFormat(DATE_FORMAT);
+     });
      // Columns C..N: centered and bold.
      sheet.getRange(1, 3, maxRows, n - 2).setHorizontalAlignment('center').setFontWeight('bold');
      sheet.autoResizeColumns(1, n);
