@@ -1077,6 +1077,25 @@ test('unit owner is captured from a pass issue and a resident request, and is ed
   assert.equal(denied.status, 403);
 });
 
+test('integration status is management-only; sheets mirror is a no-op when unconfigured', async () => {
+  const mgr = makeClient();
+  await mgr('POST', '/api/auth/login', { username: 'manager1', password: 'changeme123' });
+  const s = await mgr('GET', '/api/admin/integrations');
+  assert.equal(s.status, 200);
+  assert.equal(s.body.sheets, false); // no SHEETS_WEBHOOK_URL in tests
+  assert.equal(typeof s.body.email, 'boolean');
+
+  // With no webhook configured, logging an event is a silent no-op (never throws).
+  const sheetsLog = require('../src/services/sheetsLog');
+  const r = await sheetsLog.logEvent('issued', { plate: 'NOOP1' });
+  assert.equal(r.skipped, true);
+
+  // Security cannot read integration status.
+  const sec = makeClient();
+  await sec('POST', '/api/auth/login', { username: 'security1', password: 'changeme123' });
+  assert.equal((await sec('GET', '/api/admin/integrations')).status, 403);
+});
+
 test('shutdown endpoint is management-only (and a no-op under test)', async () => {
   // Non-management is refused.
   const sec = makeClient();

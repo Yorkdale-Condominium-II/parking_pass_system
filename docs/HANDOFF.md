@@ -15,7 +15,7 @@ A continuation guide for picking this project back up in a new session.
 it, `GET /api/settings` returns it (public), and the SPA shows it as a `vX.Y.Z`
 badge in the top-bar header and in the browser tab title. **Bump `package.json`
 with every committed change** so the running build is identifiable at a glance
-(semver: patch for fixes, minor for features). Current: **1.14.1**.
+(semver: patch for fixes, minor for features). Current: **1.15.0**.
 
 ---
 
@@ -102,6 +102,11 @@ These are built but inert until configured in `.env` (see `.env.example`):
   `<OAUTH_BASE_URL>/api/auth/sso/<google|microsoft>/callback`.
   Never end-to-end tested (no real provider creds yet) — first real login is
   the test.
+- **Google Sheets mirror:** set `SHEETS_WEBHOOK_URL` (+ optional
+  `SHEETS_WEBHOOK_TOKEN`) to copy every pass event (issued/revoked/vacated) into
+  a Google Sheet via an Apps Script web app. Best-effort, off the critical path.
+  Full 5-minute setup + the script to paste is in `docs/GOOGLE_SHEETS.md`.
+  Status shows in Manager → Download data.
 
 ## 3. Run it on the user's PC (Windows)
 

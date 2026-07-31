@@ -47,6 +47,11 @@ module.exports = {
       tenant: process.env.MICROSOFT_TENANT || 'common',
     },
   },
+  // Optional: mirror pass events (issued / revoked / vacated) to a Google Sheet
+  // via a Google Apps Script web-app webhook. Inert until SHEETS_WEBHOOK_URL is
+  // set. SHEETS_WEBHOOK_TOKEN is an optional shared secret the script can check.
+  sheetsWebhookUrl: process.env.SHEETS_WEBHOOK_URL || null,
+  sheetsWebhookToken: process.env.SHEETS_WEBHOOK_TOKEN || null,
   // Barcode payloads older than the pass expiry are always rejected; this is an
   // additional hard ceiling in case a very long-lived pass is ever created.
   jwtIssuer: 'condo-parking-pass',

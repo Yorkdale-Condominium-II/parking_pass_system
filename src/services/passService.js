@@ -5,6 +5,7 @@ const { evaluateQuota } = require('./quota');
 const { evaluateSpots } = require('./spots');
 const barcode = require('./../crypto/barcode');
 const regions = require('./../regions');
+const sheetsLog = require('./sheetsLog');
 
 function normalizePlate(plate) {
   return String(plate || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -78,7 +79,7 @@ async function issuePass(opts) {
     throw e;
   }
 
-  return db.withTransaction(async (client) => {
+  const result = await db.withTransaction(async (client) => {
     const unitRes = await client.query(
       `SELECT id, unit_number, kind FROM units WHERE unit_number = $1`,
       [opts.unitNumber]
@@ -216,6 +217,21 @@ async function issuePass(opts) {
       usedSpotOverride,
     };
   });
+  // Mirror to Google Sheets (best-effort, off the critical path).
+  sheetsLog.logEvent('issued', {
+    unit: result.pass.unit_number,
+    kind: result.pass.kind,
+    plate: result.pass.visitor_plate,
+    visitor: result.pass.visitor_name || '',
+    issuedAt: result.pass.issued_at,
+    startsAt: result.pass.starts_at,
+    expiresAt: result.pass.expires_at,
+    shortCode: result.shortCode,
+    issuer: opts.issuer ? (opts.issuer.name || opts.issuer.username || '') : '',
+    override: Boolean(result.usedOverride),
+    spotOverride: Boolean(result.usedSpotOverride),
+  }).catch(() => {});
+  return result;
 }
 
 // Shared post-crypto reconciliation used by both token and short-code verify.
@@ -258,7 +274,7 @@ async function reconcilePass(row, actorId, actorDetail) {
  * the next guest. Only affects active, non-vacated passes.
  */
 async function vacatePass(passId, actorId) {
-  return db.withTransaction(async (client) => {
+  const row = await db.withTransaction(async (client) => {
     const res = await client.query(
       `UPDATE visitor_passes
           SET vacated_at = now(), vacated_by = $2
@@ -274,6 +290,8 @@ async function vacatePass(passId, actorId) {
     await audit(client, { passId, action: 'vacated', actorId, detail: {} });
     return res.rows[0];
   });
+  sheetsLog.logEvent('vacated', { plate: row.visitor_plate, passId: row.id }).catch(() => {});
+  return row;
 }
 
 /**
@@ -327,7 +345,7 @@ async function verifyByShortCode(input, actorId) {
 }
 
 async function revokePass(passId, actorId) {
-  return db.withTransaction(async (client) => {
+  const row = await db.withTransaction(async (client) => {
     const res = await client.query(
       `UPDATE visitor_passes
           SET status = 'revoked', revoked_at = now(), revoked_by = $2
@@ -343,6 +361,8 @@ async function revokePass(passId, actorId) {
     await audit(client, { passId, action: 'revoked', actorId, detail: {} });
     return res.rows[0];
   });
+  sheetsLog.logEvent('revoked', { plate: row.visitor_plate, passId: row.id }).catch(() => {});
+  return row;
 }
 
 module.exports = {

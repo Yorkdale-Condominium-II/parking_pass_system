@@ -814,9 +814,18 @@ async function loadSpotsBadge() {
 
 // --- Export (Management) ---
 async function loadExportDatasets() {
+  loadIntegrationStatus();
   if ($('#exportDataset').options.length) return;
   const sets = await api('/admin/export/datasets');
   $('#exportDataset').innerHTML = sets.map((s) => `<option value="${s.id}">${s.label}</option>`).join('');
+}
+async function loadIntegrationStatus() {
+  try {
+    const s = await api('/admin/integrations');
+    $('#sheetsStatus').innerHTML = s.sheets
+      ? '🟢 Google Sheets mirror is <b>on</b> — new passes are copied to your sheet.'
+      : '⚪ Google Sheets mirror is off. See <code>docs/GOOGLE_SHEETS.md</code> to enable a live copy of pass data.';
+  } catch { $('#sheetsStatus').textContent = ''; }
 }
 $('#exportBtn').onclick = () => {
   const dataset = $('#exportDataset').value;

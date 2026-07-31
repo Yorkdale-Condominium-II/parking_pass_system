@@ -7,6 +7,8 @@ const { normalizePlate } = require('./../services/passService');
 const config = require('./../config');
 const barcode = require('./../crypto/barcode');
 const exporter = require('./../services/export');
+const mailer = require('./../services/mailer');
+const sheetsLog = require('./../services/sheetsLog');
 
 const router = express.Router();
 
@@ -620,6 +622,11 @@ router.post('/clear-logs', async (req, res) => {
              pass_audit: passAudit.rowCount, auth_audit: authAudit.rowCount };
   });
   res.json({ ok: true, deleted });
+});
+
+// --- Optional integration status (email / Google Sheets mirror) ------------
+router.get('/integrations', (req, res) => {
+  res.json({ email: mailer.isConfigured(), sheets: sheetsLog.isConfigured() });
 });
 
 // --- Data export (CSV / XLSX / PDF) ----------------------------------------
