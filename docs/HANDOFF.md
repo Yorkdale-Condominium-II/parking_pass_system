@@ -15,7 +15,7 @@ A continuation guide for picking this project back up in a new session.
 it, `GET /api/settings` returns it (public), and the SPA shows it as a `vX.Y.Z`
 badge in the top-bar header and in the browser tab title. **Bump `package.json`
 with every committed change** so the running build is identifiable at a glance
-(semver: patch for fixes, minor for features). Current: **1.15.0**.
+(semver: patch for fixes, minor for features). Current: **1.15.1**.
 
 ---
 
@@ -93,10 +93,11 @@ Implemented and tested:
 
 These are built but inert until configured in `.env` (see `.env.example`):
 
-- **Email (approval emails):** SMTP via Gmail App Password or a service like
-  Brevo. Set `SMTP_*` + `MAIL_FROM`. NOTE: the condo's Google **Workspace**
-  account cannot create App Passwords (policy) — use a personal Gmail with
-  2-Step on, or a free SMTP service (Brevo/SMTP2GO).
+- **Email (approval + password-reset emails):** use the building Gmail
+  **`yorkdalecondominiumii@gmail.com`** (a personal @gmail.com, so it *can*
+  create an App Password — unlike the Workspace account). Turn on 2-Step, make
+  an App Password, and set `SMTP_*` + `MAIL_FROM` (ready-to-uncomment block in
+  `.env.example`).
 - **Google/Microsoft SSO:** register OAuth apps; set `GOOGLE_CLIENT_*` /
   `MICROSOFT_CLIENT_*` + `OAUTH_BASE_URL`. Redirect URI:
   `<OAUTH_BASE_URL>/api/auth/sso/<google|microsoft>/callback`.
