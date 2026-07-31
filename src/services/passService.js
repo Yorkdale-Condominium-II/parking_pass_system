@@ -11,6 +11,25 @@ function normalizePlate(plate) {
   return String(plate || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 }
 
+// Build the Google-Sheets row fields from a visitor_passes row joined with its
+// unit (unit_number/kind) and issuer (issuer_name). Used for revoked/vacated
+// events so their rows carry the same detail as an 'issued' row.
+function passLogFields(row) {
+  return {
+    unit: row.unit_number,
+    kind: row.kind,
+    plate: row.visitor_plate,
+    visitor: row.visitor_name || '',
+    issuer: row.issuer_name || '',
+    issuedAt: row.issued_at,
+    startsAt: row.starts_at,
+    expiresAt: row.expires_at,
+    shortCode: row.short_code || '',
+    override: Boolean(row.was_override),
+    passId: row.id,
+  };
+}
+
 async function audit(client, { passId, action, actorId, detail }) {
   await client.query(
     `INSERT INTO pass_audit_log (pass_id, action, actor_id, detail)
@@ -276,10 +295,12 @@ async function reconcilePass(row, actorId, actorDetail) {
 async function vacatePass(passId, actorId) {
   const row = await db.withTransaction(async (client) => {
     const res = await client.query(
-      `UPDATE visitor_passes
+      `UPDATE visitor_passes vp
           SET vacated_at = now(), vacated_by = $2
-        WHERE id = $1 AND status = 'active' AND vacated_at IS NULL
-        RETURNING *`,
+         FROM units u, users iss
+        WHERE vp.id = $1 AND vp.unit_id = u.id AND vp.issued_by = iss.id
+          AND vp.status = 'active' AND vp.vacated_at IS NULL
+        RETURNING vp.*, u.unit_number, u.kind, iss.full_name AS issuer_name`,
       [passId, actorId]
     );
     if (res.rowCount === 0) {
@@ -290,7 +311,7 @@ async function vacatePass(passId, actorId) {
     await audit(client, { passId, action: 'vacated', actorId, detail: {} });
     return res.rows[0];
   });
-  sheetsLog.logEvent('vacated', { plate: row.visitor_plate, passId: row.id }).catch(() => {});
+  sheetsLog.logEvent('vacated', passLogFields(row)).catch(() => {});
   return row;
 }
 
@@ -347,10 +368,12 @@ async function verifyByShortCode(input, actorId) {
 async function revokePass(passId, actorId) {
   const row = await db.withTransaction(async (client) => {
     const res = await client.query(
-      `UPDATE visitor_passes
+      `UPDATE visitor_passes vp
           SET status = 'revoked', revoked_at = now(), revoked_by = $2
-        WHERE id = $1 AND status <> 'revoked'
-        RETURNING *`,
+         FROM units u, users iss
+        WHERE vp.id = $1 AND vp.unit_id = u.id AND vp.issued_by = iss.id
+          AND vp.status <> 'revoked'
+        RETURNING vp.*, u.unit_number, u.kind, iss.full_name AS issuer_name`,
       [passId, actorId]
     );
     if (res.rowCount === 0) {
@@ -361,7 +384,7 @@ async function revokePass(passId, actorId) {
     await audit(client, { passId, action: 'revoked', actorId, detail: {} });
     return res.rows[0];
   });
-  sheetsLog.logEvent('revoked', { plate: row.visitor_plate, passId: row.id }).catch(() => {});
+  sheetsLog.logEvent('revoked', passLogFields(row)).catch(() => {});
   return row;
 }
 
