@@ -61,8 +61,8 @@ async function loadSettings() {
   applyVersion();
 }
 function applyOrgName() {
-  const brandName = $('#brandName');
-  if (brandName) brandName.textContent = orgName;
+  // The header title is fixed ("Visitor Parking System"); the building/org name
+  // is shown in the top-right "who" area instead.
   if (currentUser) $('#whoami').innerHTML = `<b>${orgName}</b> · ${currentUser.name}`;
 }
 function applyVersion() {
