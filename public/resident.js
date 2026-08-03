@@ -10,8 +10,10 @@ async function loadRegions() {
   populateRegions();
 }
 function populateRegions() {
-  const list = regionData[$('#visitorCountry').value] || [];
+  const country = $('#visitorCountry').value;
+  const list = regionData[country] || [];
   $('#visitorRegion').innerHTML = list.map((r) => `<option value="${r.code}">${r.code} — ${r.name}</option>`).join('');
+  if (country === 'CA' && list.some((r) => r.code === 'ON')) $('#visitorRegion').value = 'ON';
 }
 $('#visitorCountry').onchange = populateRegions;
 

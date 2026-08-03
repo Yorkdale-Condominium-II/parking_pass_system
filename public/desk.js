@@ -18,8 +18,10 @@ async function loadRefData() {
     officers.map((o) => `<option value="${o.username}">${o.name} (${o.role})</option>`).join('');
 }
 function populateRegions() {
-  const list = regionData[$('#visitorCountry').value] || [];
+  const country = $('#visitorCountry').value;
+  const list = regionData[country] || [];
   $('#visitorRegion').innerHTML = list.map((r) => `<option value="${r.code}">${r.code} — ${r.name}</option>`).join('');
+  if (country === 'CA' && list.some((r) => r.code === 'ON')) $('#visitorRegion').value = 'ON';
 }
 $('#visitorCountry').onchange = populateRegions;
 $('#deskForm').unitNumber.addEventListener('input', (e) => {

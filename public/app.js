@@ -235,10 +235,14 @@ async function loadRegions() {
   regionData = await api('/regions');
   populateRegions();
 }
+// Preferred default region per country (the building is in Ontario).
+const DEFAULT_REGION = { CA: 'ON', US: '' };
 function populateRegions() {
   const country = $('#visitorCountry').value;
   const list = regionData[country] || [];
   $('#visitorRegion').innerHTML = list.map((r) => `<option value="${r.code}">${r.code} — ${r.name}</option>`).join('');
+  const preferred = DEFAULT_REGION[country];
+  if (preferred && list.some((r) => r.code === preferred)) $('#visitorRegion').value = preferred;
 }
 $('#visitorCountry').onchange = populateRegions;
 
