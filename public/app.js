@@ -540,6 +540,21 @@ $('#clearLogsBtn').onclick = async () => {
     loadAudit(); loadAuthAudit(); loadUsers();
   } catch (err) { $('#clearLogsMsg').textContent = err.message; }
 };
+
+// --- Reset all visitor data (full clean slate) ---
+$('#resetActivityBtn').onclick = async () => {
+  const typed = prompt('This permanently deletes ALL passes (including live and scheduled), requests, logs, and the resident/vehicle registry. Units and user accounts are kept.\n\nType RESET to confirm:');
+  if (typed === null) return;
+  if (typed !== 'RESET') { $('#resetActivityMsg').textContent = 'Not reset — you must type RESET exactly.'; return; }
+  try {
+    await api('/admin/reset-activity', { method: 'POST', body: { confirm: 'RESET' } });
+    $('#resetActivityMsg').textContent = 'Done — all visitor passes, requests, logs and the vehicle registry were cleared.';
+    loadAudit(); loadAuthAudit(); loadUsers(); loadUnitsList();
+  } catch (err) {
+    $('#resetActivityMsg').textContent = err.data?.error === 'superuser_required'
+      ? 'Only a superuser can do this.' : err.message;
+  }
+};
 $('#unitForm').onsubmit = async (e) => {
   e.preventDefault();
   const f = new FormData(e.target);

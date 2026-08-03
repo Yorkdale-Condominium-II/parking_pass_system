@@ -624,6 +624,32 @@ router.post('/clear-logs', async (req, res) => {
   res.json({ ok: true, deleted });
 });
 
+// --- Full clean slate (reset all visitor activity) -------------------------
+// Wipes EVERY pass (live/scheduled included), all requests, all audit logs,
+// override grants, and the resident/vehicle registry — keeping units, user
+// accounts, and settings. For clearing out test data before go-live.
+// Superuser-only, and requires the caller to type "RESET" to confirm.
+router.post('/reset-activity', async (req, res) => {
+  const me = await db.query(`SELECT is_superuser FROM users WHERE id = $1`, [req.user.id]);
+  if (!me.rows[0]?.is_superuser) return res.status(403).json({ error: 'superuser_required' });
+  if (!req.body || req.body.confirm !== 'RESET') {
+    return res.status(400).json({ error: 'confirmation_required' });
+  }
+  await db.withTransaction(async (client) => {
+    await client.query(
+      `TRUNCATE pass_requests, pass_audit_log, auth_audit_log, override_grants,
+                visitor_passes, registered_vehicles, residents, password_resets
+       RESTART IDENTITY CASCADE`
+    );
+    // Record who performed the reset (the first row of the fresh audit log).
+    await client.query(
+      `INSERT INTO pass_audit_log (action, actor_id, detail) VALUES ('activity_reset',$1,$2)`,
+      [req.user.id, { note: 'all visitor passes, requests, logs and vehicle registry cleared' }]
+    );
+  });
+  res.json({ ok: true });
+});
+
 // --- Optional integration status (email / Google Sheets mirror) ------------
 router.get('/integrations', (req, res) => {
   res.json({ email: mailer.isConfigured(), sheets: sheetsLog.isConfigured() });

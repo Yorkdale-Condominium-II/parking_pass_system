@@ -1077,6 +1077,41 @@ test('unit owner is captured from a pass issue and a resident request, and is ed
   assert.equal(denied.status, 403);
 });
 
+test('reset-activity wipes all passes/registry but keeps units and users', async () => {
+  const mgr = makeClient();
+  await mgr('POST', '/api/auth/login', { username: 'manager1', password: 'changeme123' });
+
+  // Create some activity: a live pass and a future-scheduled pass.
+  await mgr('POST', '/api/passes', { unitNumber: '1204', visitorPlate: 'RESETLIVE' });
+  const future = new Date(Date.now() + 40 * 3600 * 1000).toISOString();
+  await mgr('POST', '/api/passes', { unitNumber: '1204', visitorPlate: 'RESETSCHED', startsAt: future });
+  const beforeSpots = await mgr('GET', '/api/spots');
+  assert.ok(beforeSpots.body.used + beforeSpots.body.upcoming.length >= 1);
+
+  // Typed confirmation is required, and it's superuser-only.
+  assert.equal((await mgr('POST', '/api/admin/reset-activity', { confirm: 'nope' })).status, 400);
+  const sec = makeClient();
+  await sec('POST', '/api/auth/login', { username: 'security1', password: 'changeme123' });
+  assert.equal((await sec('POST', '/api/admin/reset-activity', { confirm: 'RESET' })).status, 403);
+
+  const reset = await mgr('POST', '/api/admin/reset-activity', { confirm: 'RESET' });
+  assert.equal(reset.status, 200);
+
+  // Everything visitor-related is gone...
+  const spots = await mgr('GET', '/api/spots');
+  assert.equal(spots.body.used, 0);
+  assert.equal(spots.body.upcoming.length, 0);
+  const board = await mgr('GET', '/api/board/summary');
+  assert.equal(board.body.totals.total_passes, 0);
+  assert.equal(board.body.totals.active_passes, 0);
+  assert.equal(board.body.registeredVehicles, 0);
+
+  // ...but units and user accounts remain.
+  assert.ok(board.body.totalUnits >= 1);
+  const users = await mgr('GET', '/api/admin/users');
+  assert.ok(users.body.some((u) => u.username === 'manager1'));
+});
+
 test('integration status is management-only; sheets mirror is a no-op when unconfigured', async () => {
   const mgr = makeClient();
   await mgr('POST', '/api/auth/login', { username: 'manager1', password: 'changeme123' });
