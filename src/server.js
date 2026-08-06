@@ -8,6 +8,10 @@ const config = require('./config');
 
 const app = express();
 
+// Trust a single reverse proxy (e.g. a TLS terminator) so req.ip and the
+// Secure-cookie decision reflect the real client connection over HTTPS.
+app.set('trust proxy', 1);
+
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {

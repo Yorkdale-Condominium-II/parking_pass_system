@@ -506,7 +506,7 @@ router.post('/overrides', async (req, res) => {
   const r = await db.query(
     `INSERT INTO override_grants (unit_id, calendar_year, extra_passes, reason, granted_by)
      VALUES ($1,$2,$3,$4,$5) RETURNING *`,
-    [unit.rows[0].id, year || new Date().getUTCFullYear(), parseInt(extraPasses, 10), reason, req.user.id]
+    [unit.rows[0].id, year || new Date().getFullYear(), parseInt(extraPasses, 10), reason, req.user.id]
   );
   res.status(201).json(r.rows[0]);
 });

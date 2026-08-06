@@ -105,13 +105,16 @@ router.post('/requests', submitLimiter, async (req, res) => {
   });
 });
 
-// Public status check by short reference. Rate-limited to slow enumeration.
+// Public status check by short reference. Rate-limited to slow enumeration of
+// the 6-char reference space (harvesting unit numbers / plates via guessing).
 const statusLimiter = rateLimit({
-  windowMs: 10 * 60 * 1000, max: 60, standardHeaders: true, legacyHeaders: false,
+  windowMs: 10 * 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false,
   skip: () => process.env.NODE_ENV === 'test',
 });
 router.get('/status/:ref', statusLimiter, async (req, res) => {
   const ref = String(req.params.ref || '').toUpperCase().replace(/[^0-9A-Z]/g, '');
+  // A reference is exactly 6 chars — reject malformed lookups without a query.
+  if (ref.length !== 6) return res.status(404).json({ error: 'not_found' });
   const r = await db.query(
     `SELECT pr.ref_code, pr.status, pr.created_at, pr.decided_at, pr.decision_note,
             pr.visitor_plate, u.unit_number

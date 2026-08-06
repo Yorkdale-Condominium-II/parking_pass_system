@@ -14,7 +14,7 @@ router.get('/summary', async (req, res) => {
   const totals = await db.query(
     `SELECT
         COUNT(*)::int AS total_passes,
-        COUNT(*) FILTER (WHERE status = 'active')::int  AS active_passes,
+        COUNT(*) FILTER (WHERE status = 'active' AND expires_at > now())::int AS active_passes,
         COUNT(*) FILTER (WHERE status = 'revoked')::int AS revoked_passes,
         COUNT(*) FILTER (WHERE was_override)::int        AS override_passes,
         COUNT(DISTINCT unit_id)::int                     AS units_with_passes

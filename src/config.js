@@ -1,6 +1,13 @@
 'use strict';
 require('dotenv').config();
 
+// Pin the property's timezone for all local-time math (pass expiry, "rest of
+// today", calendar-year quota buckets) so behaviour is identical whether the
+// server runs on the on-site Windows box or a UTC cloud host. Must be set
+// before any Date is used. Override with PROPERTY_TZ (an IANA name).
+const PROPERTY_TZ = process.env.PROPERTY_TZ || 'America/Toronto';
+process.env.TZ = PROPERTY_TZ;
+
 function required(name) {
   const v = process.env[name];
   if (!v || v.trim() === '') {
@@ -11,6 +18,12 @@ function required(name) {
 }
 
 module.exports = {
+  propertyTz: PROPERTY_TZ,
+  // Send the session cookie only over HTTPS. Defaults on in production; set
+  // COOKIE_SECURE=true when serving over TLS (directly or behind a proxy).
+  cookieSecure: process.env.COOKIE_SECURE
+    ? process.env.COOKIE_SECURE === 'true'
+    : process.env.NODE_ENV === 'production',
   port: parseInt(process.env.PORT || '3000', 10),
   env: process.env.NODE_ENV || 'development',
   // App version, surfaced in the UI header/tab. Single source of truth is

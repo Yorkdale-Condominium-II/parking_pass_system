@@ -437,6 +437,18 @@ test('dashboard summary is management-only and carries no PII', async () => {
   // Security (limited access) cannot read the dashboard.
   const denied = await staff('GET', '/api/board/summary');
   assert.equal(denied.status, 403);
+
+  // "Active" is time-aware: a pass whose window has passed is NOT counted as
+  // active even though its status column is still 'active'.
+  const live = await staff('POST', '/api/passes', { unitNumber: '1204', visitorPlate: 'ACT1' });
+  const before = (await mgr('GET', '/api/board/summary')).body.totals.active_passes;
+  assert.ok(before >= 1);
+  await db.query(
+    `UPDATE visitor_passes SET issued_at = now() - interval '3 hours',
+            starts_at = now() - interval '3 hours', expires_at = now() - interval '1 hour'
+      WHERE id = $1`, [live.body.passId]);
+  const after = (await mgr('GET', '/api/board/summary')).body.totals.active_passes;
+  assert.equal(after, before - 1);
 });
 
 test('management admin can create a user and read the audit log', async () => {

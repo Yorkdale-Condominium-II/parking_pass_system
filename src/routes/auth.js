@@ -67,7 +67,7 @@ router.post('/login', loginLimiter, async (req, res) => {
   res.cookie('session', token, {
     httpOnly: true,
     sameSite: 'strict',
-    secure: process.env.NODE_ENV === 'production',
+    secure: config.cookieSecure,
     maxAge: 8 * 3600 * 1000,
   });
   res.json({
@@ -95,7 +95,7 @@ router.post('/change-password', requireAuth, async (req, res) => {
   );
   const token = issueSession({ ...user, must_reset_password: false });
   res.cookie('session', token, {
-    httpOnly: true, sameSite: 'strict', secure: process.env.NODE_ENV === 'production', maxAge: 8 * 3600 * 1000,
+    httpOnly: true, sameSite: 'strict', secure: config.cookieSecure, maxAge: 8 * 3600 * 1000,
   });
   res.json({ ok: true });
 });
@@ -259,7 +259,7 @@ router.patch('/account', requireAuth, async (req, res) => {
   const u = updated.rows[0];
   const token = issueSession(u);
   res.cookie('session', token, {
-    httpOnly: true, sameSite: 'strict', secure: process.env.NODE_ENV === 'production', maxAge: 8 * 3600 * 1000,
+    httpOnly: true, sameSite: 'strict', secure: config.cookieSecure, maxAge: 8 * 3600 * 1000,
   });
   res.json({
     username: u.username, first_name: u.first_name, last_name: u.last_name,
