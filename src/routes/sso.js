@@ -104,7 +104,7 @@ router.get('/:provider/callback', async (req, res) => {
 
   // login
   await logAuth({ userId: user.id, username: user.username, event: 'login_success', success: true, req });
-  res.cookie('session', issueSession(user), {
+  res.cookie('session', await issueSession(user), {
     httpOnly: true, sameSite: 'strict', secure, maxAge: 8 * 3600 * 1000,
   });
   res.redirect('/');

@@ -420,3 +420,30 @@ COMMIT;
 BEGIN;
 ALTER TABLE visitor_passes ADD COLUMN IF NOT EXISTS visitor_email TEXT;
 COMMIT;
+
+-- ============================================================================
+--  v16 migration — revocable auth sessions. Every issued login JWT carries a
+--  random `jti` recorded here (expiring in 8h). Logout, "sign out other
+--  devices", and admin deactivation can revoke a session before its natural
+--  expiry; requireAuth rejects a jti that is missing, revoked, or expired.
+--  Additive + idempotent.
+-- ============================================================================
+BEGIN;
+
+CREATE TABLE IF NOT EXISTS auth_sessions (
+    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id        UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    jti            TEXT        NOT NULL UNIQUE,
+    issued_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    expires_at     TIMESTAMPTZ NOT NULL,
+    revoked_at     TIMESTAMPTZ,
+    revoked_reason TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions(user_id);
+-- Partial index over not-yet-revoked sessions. NOTE: the predicate cannot
+-- reference now() (must be IMMUTABLE), so expiry is filtered at query time; the
+-- UNIQUE(jti) index already makes the per-jti active lookup O(1).
+CREATE INDEX IF NOT EXISTS idx_auth_sessions_active ON auth_sessions(jti)
+    WHERE revoked_at IS NULL;
+
+COMMIT;

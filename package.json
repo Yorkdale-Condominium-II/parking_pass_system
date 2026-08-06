@@ -10,7 +10,7 @@
     "migrate": "node scripts/migrate.js",
     "seed": "node scripts/seed.js",
     "recover": "node scripts/recover-admin.js",
-    "test": "node --test \"test/**/*.test.js\""
+    "test": "node --test --test-concurrency=1 \"test/**/*.test.js\""
   },
   "engines": {
     "node": ">=18"

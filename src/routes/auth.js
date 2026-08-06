@@ -6,7 +6,7 @@ const db = require('./../db');
 const config = require('./../config');
 const password = require('./../auth/password');
 const mailer = require('./../services/mailer');
-const { issueSession, requireAuth } = require('./../auth/middleware');
+const { issueSession, revokeSession, requireAuth } = require('./../auth/middleware');
 
 const router = express.Router();
 
@@ -63,7 +63,7 @@ router.post('/login', loginLimiter, async (req, res) => {
   }
 
   await logAuth({ userId: user.id, username: user.username, event: 'login_success', success: true, req });
-  const token = issueSession(user);
+  const token = await issueSession(user);
   res.cookie('session', token, {
     httpOnly: true,
     sameSite: 'strict',
@@ -93,11 +93,22 @@ router.post('/change-password', requireAuth, async (req, res) => {
     `UPDATE users SET password_hash = $1, must_reset_password = FALSE, updated_at = now() WHERE id = $2`,
     [hash, user.id]
   );
-  const token = issueSession({ ...user, must_reset_password: false });
+  const token = await issueSession({ ...user, must_reset_password: false });
   res.cookie('session', token, {
     httpOnly: true, sameSite: 'strict', secure: config.cookieSecure, maxAge: 8 * 3600 * 1000,
   });
   res.json({ ok: true });
+});
+
+// Revoke every OTHER active session for the signed-in user (keeps the caller's).
+// Backs a "sign out all other devices" action.
+router.post('/sessions/revoke-all', requireAuth, async (req, res) => {
+  const r = await db.query(
+    `UPDATE auth_sessions SET revoked_at = now(), revoked_reason = 'revoke_all_others'
+      WHERE user_id = $1 AND jti <> $2 AND revoked_at IS NULL`,
+    [req.user.id, req.user.jti]
+  );
+  res.json({ ok: true, revoked: r.rowCount });
 });
 
 // --- Self-service password reset -------------------------------------------
@@ -174,6 +185,8 @@ router.post('/reset-password', async (req, res) => {
 
 router.post('/logout', requireAuth, async (req, res) => {
   await logAuth({ userId: req.user.id, username: req.user.username, event: 'logout', success: true, req });
+  // Invalidate the session server-side so the token can't be replayed before expiry.
+  await revokeSession(req.user.jti, 'logout');
   res.clearCookie('session');
   res.json({ ok: true });
 });
@@ -257,7 +270,7 @@ router.patch('/account', requireAuth, async (req, res) => {
   );
 
   const u = updated.rows[0];
-  const token = issueSession(u);
+  const token = await issueSession(u);
   res.cookie('session', token, {
     httpOnly: true, sameSite: 'strict', secure: config.cookieSecure, maxAge: 8 * 3600 * 1000,
   });

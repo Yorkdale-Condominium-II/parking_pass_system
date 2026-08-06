@@ -108,6 +108,14 @@ router.patch('/users/:id', async (req, res) => {
       RETURNING id, username, first_name, last_name, full_name, role, is_active, is_superuser`,
     [req.params.id]
   );
+  // Deactivating a user immediately ends any live sessions they hold.
+  if (isActive === false) {
+    await db.query(
+      `UPDATE auth_sessions SET revoked_at = now(), revoked_reason = 'user_deactivated'
+        WHERE user_id = $1 AND revoked_at IS NULL`,
+      [req.params.id]
+    );
+  }
   res.json(out.rows[0]);
 });
 
@@ -123,6 +131,19 @@ router.post('/users/:id/reset-password', async (req, res) => {
   );
   if (r.rowCount === 0) return res.status(404).json({ error: 'user_not_found' });
   res.json({ ok: true });
+});
+
+// Revoke every active login session for a user — forces them off all devices
+// immediately (e.g. after a suspected credential compromise). Deactivating a
+// user already revokes their sessions (see PATCH above); this is the explicit
+// on-demand action.
+router.post('/users/:id/sessions/revoke', async (req, res) => {
+  const r = await db.query(
+    `UPDATE auth_sessions SET revoked_at = now(), revoked_reason = 'admin_revoke'
+      WHERE user_id = $1 AND revoked_at IS NULL`,
+    [req.params.id]
+  );
+  res.json({ ok: true, revoked: r.rowCount });
 });
 
 // Permanently delete a user account. Destructive, so it's superuser-only and
