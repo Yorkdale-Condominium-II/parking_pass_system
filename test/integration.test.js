@@ -87,6 +87,12 @@ test.before(async () => {
   await db.query(
     `INSERT INTO units (unit_number, kind, business_name) VALUES ('C-101','commercial','Corner Cafe Ltd.')`
   );
+  // Dedicated units for the building-wide capacity tests. Because at most one
+  // active pass is allowed per unit, the 5-space / 5-tag caps must now be filled
+  // from DISTINCT units rather than five passes on one unit.
+  for (const un of ['SP-1', 'SP-2', 'SP-3', 'SP-4', 'SP-5', 'SP-6']) {
+    await db.query(`INSERT INTO units (unit_number) VALUES ($1)`, [un]);
+  }
   const unit = await db.query(`SELECT id FROM units WHERE unit_number = '1204'`);
   const resident = await db.query(
     `INSERT INTO residents (unit_id, full_name, email, phone, is_primary)
@@ -210,11 +216,12 @@ test('duration presets set the right expiry (today vs tomorrow noon)', async () 
   const c = makeClient();
   await c('POST', '/api/auth/login', { username: 'security1', password: 'changeme123' });
 
+  // Distinct units: one active pass per unit is now enforced.
   const today = await c('POST', '/api/passes', { unitNumber: '1204', visitorPlate: 'DUR1', durationPreset: 'today' });
   const exp = new Date(today.body.expiresAt);
   assert.equal(exp.getHours(), 23); // end of the current local day
 
-  const noon = await c('POST', '/api/passes', { unitNumber: '1204', visitorPlate: 'DUR2', durationPreset: 'tomorrow_noon' });
+  const noon = await c('POST', '/api/passes', { unitNumber: '0805', visitorPlate: 'DUR2', durationPreset: 'tomorrow_noon' });
   assert.equal(new Date(noon.body.expiresAt).getHours(), 12);
 });
 
@@ -333,18 +340,18 @@ test('commercial units get the higher (20) annual quota', async () => {
 test('caps concurrent live passes at the 5-space limit, security can override', async () => {
   const c = makeClient();
   await c('POST', '/api/auth/login', { username: 'security1', password: 'changeme123' });
-  // Commercial unit has quota 20, so only the 5-space cap is in play here.
+  // One active pass per unit, so fill the five spaces from five DISTINCT units.
   for (let i = 0; i < 5; i++) {
-    const r = await c('POST', '/api/passes', { unitNumber: 'C-101', visitorPlate: 'S' + i });
-    assert.equal(r.status, 201, `spot ${i + 1}`);
+    const r = await c('POST', '/api/passes', { unitNumber: `SP-${i + 1}`, visitorPlate: 'S' + i });
+    assert.equal(r.status, 201, `spot ${i + 1}: ${JSON.stringify(r.body)}`);
   }
-  const full = await c('POST', '/api/passes', { unitNumber: 'C-101', visitorPlate: 'S5' });
+  const full = await c('POST', '/api/passes', { unitNumber: 'SP-6', visitorPlate: 'S5' });
   assert.equal(full.status, 409);
   assert.equal(full.body.error, 'spot_full');
   assert.equal(full.body.spots.capacity, 5);
 
   // Security override (spot confirmed free) succeeds.
-  const over = await c('POST', '/api/passes', { unitNumber: 'C-101', visitorPlate: 'S5', spotOverride: true });
+  const over = await c('POST', '/api/passes', { unitNumber: 'SP-6', visitorPlate: 'S5', spotOverride: true });
   assert.equal(over.status, 201);
   assert.equal(over.body.usedSpotOverride, true);
 });
@@ -353,12 +360,12 @@ test('scheduling a non-overlapping window avoids the live cap', async () => {
   const c = makeClient();
   await c('POST', '/api/auth/login', { username: 'security1', password: 'changeme123' });
   for (let i = 0; i < 5; i++) {
-    await c('POST', '/api/passes', { unitNumber: 'C-101', visitorPlate: 'N' + i });
+    await c('POST', '/api/passes', { unitNumber: `SP-${i + 1}`, visitorPlate: 'N' + i });
   }
   // A pass scheduled after the live ones expire doesn't overlap them (and stays
   // inside the 48h upcoming window so the scheduled list can be asserted below).
   const future = new Date(Date.now() + 30 * 3600 * 1000).toISOString();
-  const sched = await c('POST', '/api/passes', { unitNumber: 'C-101', visitorPlate: 'SCHED1', startsAt: future });
+  const sched = await c('POST', '/api/passes', { unitNumber: 'SP-6', visitorPlate: 'SCHED1', startsAt: future });
   assert.equal(sched.status, 201, JSON.stringify(sched.body));
 
   // The scheduled list names who authorized (issued) each upcoming pass.
@@ -380,15 +387,15 @@ test('vacating a spot frees capacity for the next guest', async () => {
   await c('POST', '/api/auth/login', { username: 'security1', password: 'changeme123' });
   const ids = [];
   for (let i = 0; i < 5; i++) {
-    const r = await c('POST', '/api/passes', { unitNumber: 'C-101', visitorPlate: 'V' + i });
+    const r = await c('POST', '/api/passes', { unitNumber: `SP-${i + 1}`, visitorPlate: 'V' + i });
     ids.push(r.body.passId);
   }
-  assert.equal((await c('POST', '/api/passes', { unitNumber: 'C-101', visitorPlate: 'V5' })).status, 409);
+  assert.equal((await c('POST', '/api/passes', { unitNumber: 'SP-6', visitorPlate: 'V5' })).status, 409);
 
   const vac = await c('POST', `/api/passes/${ids[0]}/vacate`, {});
   assert.equal(vac.status, 200);
 
-  const now201 = await c('POST', '/api/passes', { unitNumber: 'C-101', visitorPlate: 'V5' });
+  const now201 = await c('POST', '/api/passes', { unitNumber: 'SP-6', visitorPlate: 'V5' });
   assert.equal(now201.status, 201, 'a freed spot should allow a new pass');
 
   const spots = await c('GET', '/api/spots');
@@ -1061,7 +1068,9 @@ test('unit owner is captured from a pass issue and a resident request, and is ed
   assert.equal(u0805.owner_phone, '416-555-0101');
   assert.equal(u0805.owner_email, 'olga@example.com');
 
-  // A later issue without owner fields must NOT wipe the saved owner.
+  // Free the first pass (one active pass per unit), then a later issue without
+  // owner fields must NOT wipe the saved owner.
+  await mgr('POST', `/api/passes/${iss.body.passId}/vacate`, {});
   await mgr('POST', '/api/passes', { unitNumber: '0805', visitorPlate: 'OWN2' });
   list = await mgr('GET', '/api/admin/units');
   assert.equal(list.body.find((u) => u.unit_number === '0805').owner_name, 'Olga Owner');
@@ -1100,10 +1109,11 @@ test('reset-activity wipes all passes/registry but keeps units and users', async
   const mgr = makeClient();
   await mgr('POST', '/api/auth/login', { username: 'manager1', password: 'changeme123' });
 
-  // Create some activity: a live pass and a future-scheduled pass.
+  // Create some activity: a live pass and a future-scheduled pass (distinct
+  // units, since only one active pass per unit is allowed).
   await mgr('POST', '/api/passes', { unitNumber: '1204', visitorPlate: 'RESETLIVE' });
   const future = new Date(Date.now() + 40 * 3600 * 1000).toISOString();
-  await mgr('POST', '/api/passes', { unitNumber: '1204', visitorPlate: 'RESETSCHED', startsAt: future });
+  await mgr('POST', '/api/passes', { unitNumber: '0805', visitorPlate: 'RESETSCHED', startsAt: future });
   const beforeSpots = await mgr('GET', '/api/spots');
   assert.ok(beforeSpots.body.used + beforeSpots.body.upcoming.length >= 1);
 
@@ -1275,7 +1285,7 @@ test('tag mode: issuing a pass assigns the lowest available numbered tag', async
     const a = await c('POST', '/api/passes', { unitNumber: '1204', visitorPlate: 'TAG1', printInstead: true });
     assert.equal(a.status, 201, JSON.stringify(a.body));
     assert.equal(a.body.tagNumber, 1);
-    const b = await c('POST', '/api/passes', { unitNumber: '1204', visitorPlate: 'TAG2', printInstead: true });
+    const b = await c('POST', '/api/passes', { unitNumber: '0805', visitorPlate: 'TAG2', printInstead: true });
     assert.equal(b.body.tagNumber, 2);
     // The tags board reflects the assignments.
     const board = await c('GET', '/api/tags');
@@ -1296,11 +1306,11 @@ test('tag mode: the pool is a hard cap — the 6th concurrent issue is refused',
     const c = makeClient();
     await c('POST', '/api/auth/login', { username: 'manager1', password: 'changeme123' });
     for (let i = 1; i <= 5; i++) {
-      const r = await c('POST', '/api/passes', { unitNumber: 'C-101', visitorPlate: 'CAP' + i, printInstead: true });
+      const r = await c('POST', '/api/passes', { unitNumber: `SP-${i}`, visitorPlate: 'CAP' + i, printInstead: true });
       assert.equal(r.status, 201, `#${i}: ${JSON.stringify(r.body)}`);
     }
     // Spot-override so we bypass the spot cap and prove the TAG pool is the limit.
-    const sixth = await c('POST', '/api/passes', { unitNumber: 'C-101', visitorPlate: 'CAP6', spotOverride: true, printInstead: true });
+    const sixth = await c('POST', '/api/passes', { unitNumber: 'SP-6', visitorPlate: 'CAP6', spotOverride: true, printInstead: true });
     assert.equal(sixth.status, 409);
     assert.equal(sixth.body.error, 'no_tags_available');
   } finally {
@@ -1388,8 +1398,9 @@ test('tag mode: issuing requires a visitor email, or printing the copy instead',
 
     // A visitor email is stored on the pass; delivery is attempted (SMTP is not
     // configured under test, so it reports configured:false but lists recipients).
+    // Distinct unit from EM1 above, since one active pass per unit is enforced.
     const emailed = await c('POST', '/api/passes',
-      { unitNumber: '1204', visitorPlate: 'EM2', visitorEmail: 'guest@example.com' });
+      { unitNumber: '0805', visitorPlate: 'EM2', visitorEmail: 'guest@example.com' });
     assert.equal(emailed.status, 201, JSON.stringify(emailed.body));
     assert.equal(emailed.body.visitorEmail, 'guest@example.com');
     assert.equal(emailed.body.emailDelivery.configured, false);

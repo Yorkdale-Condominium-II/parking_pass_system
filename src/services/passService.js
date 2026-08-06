@@ -234,6 +234,24 @@ async function issuePass(opts) {
       usedSpotOverride = true; // Security confirmed a spot is available
     }
 
+    // One active pass per unit at a time: a unit may not hold several
+    // simultaneous visitor passes (e.g. five guests on five plates the same
+    // day). A scheduled/live pass (future expiry, not vacated, not revoked)
+    // counts; revoke or vacate the existing one first. The partial unique index
+    // idx_pass_one_per_unit_per_day is the DB-level backstop for same-day races.
+    const dup = await client.query(
+      `SELECT 1 FROM visitor_passes
+        WHERE unit_id = $1 AND status = 'active' AND vacated_at IS NULL
+          AND expires_at > now()
+        LIMIT 1`,
+      [unit.id]
+    );
+    if (dup.rowCount > 0) {
+      const e = new Error('This unit already has an active pass. Revoke or vacate it first.');
+      e.code = 'unit_already_has_active_pass';
+      throw e;
+    }
+
     // TAG MODE: claim an available numbered tag from the finite pool. SKIP
     // LOCKED lets concurrent issues grab different tags without blocking; when
     // none are free the physical pool is the hard cap.
@@ -259,17 +277,28 @@ async function issuePass(opts) {
     // Insert first to obtain the server-generated id, then derive the signed
     // token and short code that bind to it, and persist them.
     const durationMode = opts.durationPreset || 'short_stay';
-    const insertRes = await client.query(
-      `INSERT INTO visitor_passes
-         (unit_id, visitor_plate, visitor_name, visitor_first_name, visitor_last_name,
-          visitor_region, issued_by, issued_at, starts_at, expires_at, calendar_year,
-          status, was_override, barcode_sig, tag_id, visitor_email, duration_mode)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'active',$12,'',$13,$14,$15)
-       RETURNING *`,
-      [unit.id, plate, fullName, first || null, last || null, regionStored,
-       opts.issuer.id, now, startsAt, expiresAt, year, usedOverride, tag ? tag.id : null,
-       opts.visitorEmail ? String(opts.visitorEmail).trim() : null, durationMode]
-    );
+    let insertRes;
+    try {
+      insertRes = await client.query(
+        `INSERT INTO visitor_passes
+           (unit_id, visitor_plate, visitor_name, visitor_first_name, visitor_last_name,
+            visitor_region, issued_by, issued_at, starts_at, expires_at, calendar_year,
+            status, was_override, barcode_sig, tag_id, visitor_email, duration_mode)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'active',$12,'',$13,$14,$15)
+         RETURNING *`,
+        [unit.id, plate, fullName, first || null, last || null, regionStored,
+         opts.issuer.id, now, startsAt, expiresAt, year, usedOverride, tag ? tag.id : null,
+         opts.visitorEmail ? String(opts.visitorEmail).trim() : null, durationMode]
+      );
+    } catch (err) {
+      // Same-unit / same-day race that slipped past the explicit check above.
+      if (err.code === '23505' && /one_per_unit_per_day/.test(err.constraint || '')) {
+        const e = new Error('This unit already has a pass for that calendar day.');
+        e.code = 'day_duplicate';
+        throw e;
+      }
+      throw err;
+    }
     const pass = insertRes.rows[0];
     if (tag) {
       await client.query(`UPDATE parking_tags SET status = 'issued' WHERE id = $1`, [tag.id]);
@@ -294,6 +323,7 @@ async function issuePass(opts) {
       action: usedOverride ? 'override_used' : 'issued',
       actorId: opts.issuer.id,
       detail: { unit: unit.unit_number, kind: unit.kind, plate, year,
+                durationMode,
                 override: usedOverride, spotOverride: usedSpotOverride,
                 scheduled: startsAt.getTime() > now.getTime() + 60000 },
     });

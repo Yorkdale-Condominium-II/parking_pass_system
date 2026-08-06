@@ -174,11 +174,14 @@ router.post('/', requireAuth, requireRole('security', 'management'), async (req,
       quota_exceeded: 409,
       spot_full: 409,
       no_tags_available: 409,
+      unit_already_has_active_pass: 409,
+      day_duplicate: 409,
       override_code_invalid: 403,
       override_reason_required: 400,
       invalid_plate: 400,
       invalid_region: 400,
       invalid_start: 400,
+      invalid_duration: 400,
     };
     if (codeMap[err.code]) {
       return res.status(codeMap[err.code]).json({ error: err.code, message: err.message, quota: err.quota, spots: err.spots });
