@@ -2,6 +2,14 @@
 // Public desk kiosk — no session. Each pass is authorized by the selected
 // officer's password.
 const $ = (s) => document.querySelector(s);
+
+// Escape server-supplied values before they flow into innerHTML, so a visitor
+// name / plate / unit / business name can never inject markup or script.
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  })[c]);
+}
 let regionData = null, unitIndex = {};
 
 async function loadRefData() {
@@ -11,16 +19,16 @@ async function loadRefData() {
   $('#unitList').innerHTML = units.map((u) => {
     unitIndex[u.unit_number] = u;
     const label = u.kind === 'commercial' ? `${u.unit_number} — ${u.business_name || 'Commercial'}` : u.unit_number;
-    return `<option value="${u.unit_number}">${label}</option>`;
+    return `<option value="${esc(u.unit_number)}">${esc(label)}</option>`;
   }).join('');
   const officers = await (await fetch('/api/desk/officers')).json();
   $('#officerSelect').innerHTML = '<option value="">Select officer…</option>' +
-    officers.map((o) => `<option value="${o.username}">${o.name} (${o.role})</option>`).join('');
+    officers.map((o) => `<option value="${esc(o.username)}">${esc(o.name)} (${esc(o.role)})</option>`).join('');
 }
 function populateRegions() {
   const country = $('#visitorCountry').value;
   const list = regionData[country] || [];
-  $('#visitorRegion').innerHTML = list.map((r) => `<option value="${r.code}">${r.code} — ${r.name}</option>`).join('');
+  $('#visitorRegion').innerHTML = list.map((r) => `<option value="${esc(r.code)}">${esc(r.code)} — ${esc(r.name)}</option>`).join('');
   if (country === 'CA' && list.some((r) => r.code === 'ON')) $('#visitorRegion').value = 'ON';
 }
 $('#visitorCountry').onchange = populateRegions;
@@ -70,12 +78,12 @@ $('#deskForm').onsubmit = async (e) => {
     }
     $('#deskResult').innerHTML = `
       <div class="result-card">
-        <h3>✓ Pass issued by ${r.issuedBy}${r.usedOverride ? ' (quota override)' : ''}${r.usedSpotOverride ? ' (spot override)' : ''}</h3>
-        <p>Unit <b>${r.unitNumber}</b> · Plate <b>${r.visitorPlate}</b></p>
-        ${new Date(r.startsAt) - Date.now() > 60000 ? `<p>Valid from: <b>${new Date(r.startsAt).toLocaleString()}</b></p>` : ''}
-        <p>Expires: <b>${new Date(r.expiresAt).toLocaleString()}</b></p>
-        <p>Verification code: <b style="font-family:monospace;font-size:18px">${r.shortCode}</b></p>
-        <a href="${r.printUrl}" target="_blank"><button type="button">🖨 Open printable pass</button></a>
+        <h3>✓ Pass issued by ${esc(r.issuedBy)}${r.usedOverride ? ' (quota override)' : ''}${r.usedSpotOverride ? ' (spot override)' : ''}</h3>
+        <p>Unit <b>${esc(r.unitNumber)}</b> · Plate <b>${esc(r.visitorPlate)}</b></p>
+        ${new Date(r.startsAt) - Date.now() > 60000 ? `<p>Valid from: <b>${esc(new Date(r.startsAt).toLocaleString())}</b></p>` : ''}
+        <p>Expires: <b>${esc(new Date(r.expiresAt).toLocaleString())}</b></p>
+        <p>Verification code: <b style="font-family:monospace;font-size:18px">${esc(r.shortCode)}</b></p>
+        <a href="${esc(r.printUrl)}" target="_blank"><button type="button">🖨 Open printable pass</button></a>
       </div>`;
     e.target.reset();
     $('#durationPreset').value = 'today';
@@ -104,7 +112,7 @@ async function loadDeskSession() {
   if (deskSession.active) {
     const mins = Math.max(0, Math.round((deskSession.expiresAt - Date.now()) / 60000));
     box.hidden = false;
-    box.innerHTML = `Signed in for the desk as <b>${deskSession.name}</b> (${deskSession.role}) · about ${mins} min left · <a href="#" id="deskLogout">sign out</a>`;
+    box.innerHTML = `Signed in for the desk as <b>${esc(deskSession.name)}</b> (${esc(deskSession.role)}) · about ${mins} min left · <a href="#" id="deskLogout">sign out</a>`;
     officerAuth.hidden = true;
     ssoBtns.innerHTML = '';
     document.getElementById('deskLogout').onclick = async (e) => {
@@ -115,7 +123,7 @@ async function loadDeskSession() {
     officerAuth.hidden = false;
     const labels = { google: 'Sign in with Google', microsoft: 'Sign in with Microsoft' };
     ssoBtns.innerHTML = (providers.sso || []).map((p) =>
-      `<a href="/api/auth/sso/${p}/desk"><button type="button">${labels[p] || p} (start desk session)</button></a>`).join('');
+      `<a href="/api/auth/sso/${encodeURIComponent(p)}/desk"><button type="button">${esc(labels[p] || p)} (start desk session)</button></a>`).join('');
   }
 }
 

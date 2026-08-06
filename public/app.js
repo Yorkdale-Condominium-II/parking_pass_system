@@ -3,6 +3,26 @@
 //  Lightweight vanilla SPA. Session lives in an httpOnly cookie.
 // ---------------------------------------------------------------------------
 const $ = (s) => document.querySelector(s);
+
+// Escape any server-supplied value before it flows into innerHTML. Visitor
+// names, plates, unit/business names, notes, emails, user-agents and error
+// messages all originate from user input, so they must be neutralised to
+// prevent stored-XSS through the rendered tables and result cards.
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  })[c]);
+}
+
+// Human labels for the duration modes (new Short Stay / Overnight plus the
+// retained legacy presets), used wherever a stored duration is displayed.
+const DURATION_LABELS = {
+  short_stay: 'Short Stay',
+  overnight: 'Overnight',
+  today: 'Rest of today (legacy)',
+  tomorrow_noon: 'Until noon tomorrow (legacy)',
+};
+
 const api = async (path, opts = {}) => {
   const res = await fetch('/api' + path, {
     headers: { 'Content-Type': 'application/json' },
@@ -67,7 +87,7 @@ async function loadSettings() {
 function applyOrgName() {
   // The header title is fixed ("Visitor Parking System"); the building/org name
   // is shown in the top-right "who" area instead.
-  if (currentUser) $('#whoami').innerHTML = `<b>${orgName}</b> · ${currentUser.name}`;
+  if (currentUser) $('#whoami').innerHTML = `<b>${esc(orgName)}</b> · ${esc(currentUser.name)}`;
 }
 function applyVersion() {
   if (!appVersion) return;
@@ -232,7 +252,7 @@ async function initSso() {
     const { sso } = await api('/auth/providers');
     const labels = { google: 'Sign in with Google', microsoft: 'Sign in with Microsoft' };
     $('#ssoButtons').innerHTML = (sso || []).map((p) =>
-      `<a href="/api/auth/sso/${p}/start"><button type="button">${labels[p] || p}</button></a>`).join('');
+      `<a href="/api/auth/sso/${encodeURIComponent(p)}/start"><button type="button">${esc(labels[p] || p)}</button></a>`).join('');
   } catch {}
 }
 
@@ -247,7 +267,7 @@ const DEFAULT_REGION = { CA: 'ON', US: '' };
 function populateRegions() {
   const country = $('#visitorCountry').value;
   const list = regionData[country] || [];
-  $('#visitorRegion').innerHTML = list.map((r) => `<option value="${r.code}">${r.code} — ${r.name}</option>`).join('');
+  $('#visitorRegion').innerHTML = list.map((r) => `<option value="${esc(r.code)}">${esc(r.code)} — ${esc(r.name)}</option>`).join('');
   const preferred = DEFAULT_REGION[country];
   if (preferred && list.some((r) => r.code === preferred)) $('#visitorRegion').value = preferred;
 }
@@ -259,7 +279,7 @@ async function loadUnits() {
   const opts = rows.map((r) => {
     unitIndex[r.unit_number] = r;
     const label = r.kind === 'commercial' ? `${r.unit_number} — ${r.business_name || 'Commercial'}` : r.unit_number;
-    return `<option value="${r.unit_number}">${label}</option>`;
+    return `<option value="${esc(r.unit_number)}">${esc(label)}</option>`;
   }).join('');
   $('#unitList').innerHTML = opts;
 }
@@ -277,13 +297,13 @@ $('#lookupForm').onsubmit = async (e) => {
   try {
     const r = await api(`/passes/lookup?by=${f.get('by')}&q=${encodeURIComponent(f.get('q'))}`);
     const reg = r.registeredVehicles.map((v) =>
-      `<tr><td>${v.licence_plate}</td><td>${v.unit_number}${v.business_name ? ' · ' + v.business_name : ''}</td><td>${v.resident_name || '—'}</td><td>${v.phone || '—'}</td><td>${[v.color, v.make, v.model].filter(Boolean).join(' ') || '—'}</td></tr>`).join('');
+      `<tr><td>${esc(v.licence_plate)}</td><td>${esc(v.unit_number)}${v.business_name ? ' · ' + esc(v.business_name) : ''}</td><td>${esc(v.resident_name || '—')}</td><td>${esc(v.phone || '—')}</td><td>${esc([v.color, v.make, v.model].filter(Boolean).join(' ') || '—')}</td></tr>`).join('');
     const passes = r.visitorPasses.map((p) =>
-      `<tr><td>${p.unit_number}</td><td>${p.visitor_plate}${p.visitor_region ? ' (' + p.visitor_region.replace('-', ' ') + ')' : ''}</td><td>${p.visitor_name || '—'}</td><td><span class="badge ${p.status === 'active' ? 'VALID' : 'REVOKED'}">${p.status}</span></td><td>${new Date(p.expires_at).toLocaleString()}</td><td>${p.status === 'active' ? `<button type="button" class="danger" data-action="cancel" data-id="${p.id}">Cancel</button>` : ''}</td></tr>`).join('');
+      `<tr><td>${esc(p.unit_number)}</td><td>${esc(p.visitor_plate)}${p.visitor_region ? ' (' + esc(p.visitor_region.replace('-', ' ')) + ')' : ''}</td><td>${esc(p.visitor_name || '—')}</td><td><span class="badge ${p.status === 'active' ? 'VALID' : 'REVOKED'}">${esc(p.status)}</span></td><td>${esc(new Date(p.expires_at).toLocaleString())}</td><td>${p.status === 'active' ? `<button type="button" class="danger" data-action="cancel" data-id="${esc(p.id)}">Cancel</button>` : ''}</td></tr>`).join('');
     $('#lookupResult').innerHTML = `
       <div class="result-card"><h3>Registered vehicles</h3>${reg ? `<table><tr><th>Plate</th><th>Unit</th><th>Resident</th><th>Phone</th><th>Vehicle</th></tr>${reg}</table>` : '<p>None found.</p>'}</div>
       <div class="result-card"><h3>Visitor passes</h3>${passes ? `<table><tr><th>Unit</th><th>Plate</th><th>Visitor</th><th>Status</th><th>Expires</th><th></th></tr>${passes}</table>` : '<p>None found.</p>'}</div>`;
-  } catch (err) { $('#lookupResult').innerHTML = `<p class="error">${err.message}</p>`; }
+  } catch (err) { $('#lookupResult').innerHTML = `<p class="error">${esc(err.message)}</p>`; }
 };
 $('#lookupResult').addEventListener('click', async (e) => {
   const btn = e.target.closest('button[data-action="cancel"]'); if (!btn) return;
@@ -312,11 +332,11 @@ function autoEmailNote(r) {
     return `<p class="msg">✉️ Email is not set up yet, so nothing was sent. Configure <code>SMTP_*</code> in <code>.env</code> to auto-email passes. (Use “Email pass” once configured.)</p>`;
   }
   if (d.sent && d.sent.length) {
-    const failed = d.failed && d.failed.length ? ` · <span style="color:#b3261e">failed: ${d.failed.join(', ')}</span>` : '';
-    return `<p class="msg">✉️ Emailed to <b>${d.sent.join('</b>, <b>')}</b>${failed}</p>`;
+    const failed = d.failed && d.failed.length ? ` · <span style="color:#b3261e">failed: ${d.failed.map(esc).join(', ')}</span>` : '';
+    return `<p class="msg">✉️ Emailed to <b>${d.sent.map(esc).join('</b>, <b>')}</b>${failed}</p>`;
   }
   if (d.failed && d.failed.length) {
-    return `<p class="msg" style="color:#b3261e">✉️ Email failed for ${d.failed.join(', ')}. Try “Email pass” below.</p>`;
+    return `<p class="msg" style="color:#b3261e">✉️ Email failed for ${d.failed.map(esc).join(', ')}. Try “Email pass” below.</p>`;
   }
   return `<p class="msg">✉️ No email address on file to send to.</p>`;
 }
@@ -364,17 +384,17 @@ $('#issueForm').onsubmit = async (e) => {
     $('#issueResult').innerHTML = `
       <div class="result-card">
         <h3>Pass issued ${r.usedOverride ? '(quota override)' : ''}${r.usedSpotOverride ? ' (spot override)' : ''}</h3>
-        ${r.tagNumber != null ? `<p style="font-size:18px">🅿️ Give the visitor physical <b>Tag #${r.tagNumber}</b></p>` : ''}
-        <p>Unit <b>${r.unitNumber}</b> (${r.kind}) · Plate <b>${r.visitorPlate}</b> · ${r.visitorName || 'visitor'}</p>
-        ${new Date(r.startsAt) - new Date(r.issuedAt) > 60000 ? `<p>Valid from: <b>${new Date(r.startsAt).toLocaleString()}</b></p>` : ''}
-        <p>Expires: <b>${new Date(r.expiresAt).toLocaleString()}</b></p>
-        <p>Verification code: <b style="font-family:monospace;font-size:18px">${r.shortCode}</b></p>
-        <p>${q.unlimited ? 'Commercial: unlimited' : `Quota this year: ${q.used}/${q.limit} used`} · Spaces used: ${r.spots ? r.spots.peak + '/' + r.spots.capacity + ' at peak' : ''}</p>
+        ${r.tagNumber != null ? `<p style="font-size:18px">🅿️ Give the visitor physical <b>Tag #${esc(r.tagNumber)}</b></p>` : ''}
+        <p>Unit <b>${esc(r.unitNumber)}</b> (${esc(r.kind)}) · Plate <b>${esc(r.visitorPlate)}</b> · ${esc(r.visitorName || 'visitor')}</p>
+        ${new Date(r.startsAt) - new Date(r.issuedAt) > 60000 ? `<p>Valid from: <b>${esc(new Date(r.startsAt).toLocaleString())}</b></p>` : ''}
+        <p>Expires: <b>${esc(new Date(r.expiresAt).toLocaleString())}</b></p>
+        <p>Verification code: <b style="font-family:monospace;font-size:18px">${esc(r.shortCode)}</b></p>
+        <p>${q.unlimited ? 'Commercial: unlimited' : `Quota this year: ${esc(q.used)}/${esc(q.limit)} used`} · Spaces used: ${r.spots ? esc(r.spots.peak + '/' + r.spots.capacity) + ' at peak' : ''}</p>
         ${autoEmailNote(r)}
         <div class="btn-row">
-          <a href="${r.printUrl}" target="_blank"><button type="button">🖨 Open printable pass</button></a>
-          <button type="button" data-deliver="email" data-id="${r.passId}">✉️ Email pass</button>
-          <button type="button" data-deliver="text" data-id="${r.passId}">💬 Text pass</button>
+          <a href="${esc(r.printUrl)}" target="_blank"><button type="button">🖨 Open printable pass</button></a>
+          <button type="button" data-deliver="email" data-id="${esc(r.passId)}">✉️ Email pass</button>
+          <button type="button" data-deliver="text" data-id="${esc(r.passId)}">💬 Text pass</button>
         </div>
         <p class="msg" id="deliverMsg"></p>
       </div>`;
@@ -391,7 +411,7 @@ $('#issueForm').onsubmit = async (e) => {
   } catch (err) {
     if (err.data?.error === 'quota_exceeded') {
       const qd = err.data.quota || {};
-      $('#issueError').innerHTML = `Quota reached (${qd.used}/${qd.limit}). Tick "Quota override" and enter this week's code (from Management) to proceed.`;
+      $('#issueError').innerHTML = `Quota reached (${esc(qd.used)}/${esc(qd.limit)}). Tick "Quota override" and enter this week's code (from Management) to proceed.`;
     } else {
       $('#issueError').textContent = err.message;
     }
@@ -412,7 +432,7 @@ $('#scanStart').onclick = async () => {
   try {
     camStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
   } catch (err) {
-    $('#scanStatus').innerHTML = `<span class="error">Camera unavailable (${err.name}). Over a plain-HTTP network connection browsers block the camera — use the printed code instead.</span>`;
+    $('#scanStatus').innerHTML = `<span class="error">Camera unavailable (${esc(err.name)}). Over a plain-HTTP network connection browsers block the camera — use the printed code instead.</span>`;
     return;
   }
   const video = $('#scanVideo');
@@ -473,15 +493,15 @@ async function doVerify(body) {
   try {
     const r = await api('/verify', { method: 'POST', body });
     const detail = r.pass ? `
-      <p>Unit <b>${r.pass.unit_number}</b> (${r.pass.kind || ''}) · Plate <b>${r.pass.visitor_plate}</b>${r.pass.visitor_region ? ' (' + r.pass.visitor_region.replace('-', ' ') + ')' : ''}</p>
-      <p>Visitor: ${r.pass.visitor_name || '—'}</p>
-      <p>Expires: ${new Date(r.pass.expires_at).toLocaleString()}</p>
+      <p>Unit <b>${esc(r.pass.unit_number)}</b> (${esc(r.pass.kind || '')}) · Plate <b>${esc(r.pass.visitor_plate)}</b>${r.pass.visitor_region ? ' (' + esc(r.pass.visitor_region.replace('-', ' ')) + ')' : ''}</p>
+      <p>Visitor: ${esc(r.pass.visitor_name || '—')}</p>
+      <p>Expires: ${esc(new Date(r.pass.expires_at).toLocaleString())}</p>
       ${r.verdict === 'VALID' ? `<div class="btn-row">
-        <button type="button" data-action="vacate" data-id="${r.pass.id}">Vehicle vacated (free spot)</button>
-        <button type="button" class="danger" data-action="revoke" data-id="${r.pass.id}">Cancel pass</button>
-      </div>` : ''}` : `<p>Reason: ${r.reason}</p>`;
-    $('#verifyResult').innerHTML = `<div class="result-card"><span class="badge ${r.verdict}">${r.verdict}</span>${detail}</div>`;
-  } catch (err) { $('#verifyResult').innerHTML = `<p class="error">${err.message}</p>`; }
+        <button type="button" data-action="vacate" data-id="${esc(r.pass.id)}">Vehicle vacated (free spot)</button>
+        <button type="button" class="danger" data-action="revoke" data-id="${esc(r.pass.id)}">Cancel pass</button>
+      </div>` : ''}` : `<p>Reason: ${esc(r.reason)}</p>`;
+    $('#verifyResult').innerHTML = `<div class="result-card"><span class="badge ${esc(r.verdict)}">${esc(r.verdict)}</span>${detail}</div>`;
+  } catch (err) { $('#verifyResult').innerHTML = `<p class="error">${esc(err.message)}</p>`; }
 }
 $('#verifyResult').addEventListener('click', async (e) => {
   const btn = e.target.closest('button[data-action]');
@@ -520,18 +540,18 @@ async function loadUsers() {
   const rows = await api('/admin/users');
   $('#usersTable').innerHTML = `<table><tr><th>Name</th><th>Username</th><th>Email (SSO)</th><th>Role</th><th>Status</th><th>Actions</th></tr>` +
     rows.map((u) => `<tr>
-      <td>${u.first_name || ''} ${u.last_name || ''}</td>
-      <td>${u.username}</td>
-      <td>${u.email || '—'}</td>
-      <td>${ROLE_LABELS[u.role] || u.role}</td>
+      <td>${esc(u.first_name || '')} ${esc(u.last_name || '')}</td>
+      <td>${esc(u.username)}</td>
+      <td>${esc(u.email || '—')}</td>
+      <td>${esc(ROLE_LABELS[u.role] || u.role)}</td>
       <td>${u.is_active ? 'Active' : '<span style="color:#b3261e">Disabled</span>'}</td>
       <td>
-        <button type="button" data-uact="history" data-id="${u.id}" data-name="${u.first_name} ${u.last_name}">History</button>
-        <button type="button" data-uact="rename" data-id="${u.id}" data-name="${((u.first_name || '') + ' ' + (u.last_name || '')).trim()}">Set name</button>
-        <button type="button" data-uact="email" data-id="${u.id}" data-email="${u.email || ''}">Set email</button>
-        <button type="button" data-uact="toggle" data-id="${u.id}" data-active="${u.is_active}">${u.is_active ? 'Disable' : 'Enable'}</button>
-        <button type="button" data-uact="resetpw" data-id="${u.id}">Reset pw</button>
-        <button type="button" class="danger" data-uact="delete" data-id="${u.id}" data-name="${u.first_name || ''} ${u.last_name || ''}">Delete</button>
+        <button type="button" data-uact="history" data-id="${esc(u.id)}" data-name="${esc(u.first_name + ' ' + u.last_name)}">History</button>
+        <button type="button" data-uact="rename" data-id="${esc(u.id)}" data-name="${esc(((u.first_name || '') + ' ' + (u.last_name || '')).trim())}">Set name</button>
+        <button type="button" data-uact="email" data-id="${esc(u.id)}" data-email="${esc(u.email || '')}">Set email</button>
+        <button type="button" data-uact="toggle" data-id="${esc(u.id)}" data-active="${esc(u.is_active)}">${u.is_active ? 'Disable' : 'Enable'}</button>
+        <button type="button" data-uact="resetpw" data-id="${esc(u.id)}">Reset pw</button>
+        <button type="button" class="danger" data-uact="delete" data-id="${esc(u.id)}" data-name="${esc((u.first_name || '') + ' ' + (u.last_name || ''))}">Delete</button>
       </td></tr>`).join('') + `</table>`;
 }
 $('#usersTable').addEventListener('click', async (e) => {
@@ -566,10 +586,10 @@ $('#usersTable').addEventListener('click', async (e) => {
       const h = await api(`/admin/users/${id}/history`);
       const s = h.summary;
       $('#userHistory').innerHTML = `<div class="result-card">
-        <h3>Activity — ${btn.dataset.name}</h3>
-        <p>Issued: <b>${s.issued}</b> · Cancelled: <b>${s.cancelled}</b> · Vacated: <b>${s.vacated}</b> · Verified: <b>${s.verified}</b></p>
+        <h3>Activity — ${esc(btn.dataset.name)}</h3>
+        <p>Issued: <b>${esc(s.issued)}</b> · Cancelled: <b>${esc(s.cancelled)}</b> · Vacated: <b>${esc(s.vacated)}</b> · Verified: <b>${esc(s.verified)}</b></p>
         <table><tr><th>Time</th><th>Action</th><th>Unit</th><th>Plate</th></tr>` +
-        h.events.map((ev) => `<tr><td>${new Date(ev.created_at).toLocaleString()}</td><td>${ev.action}</td><td>${ev.unit_number || '—'}</td><td>${ev.visitor_plate || '—'}</td></tr>`).join('') +
+        h.events.map((ev) => `<tr><td>${esc(new Date(ev.created_at).toLocaleString())}</td><td>${esc(ev.action)}</td><td>${esc(ev.unit_number || '—')}</td><td>${esc(ev.visitor_plate || '—')}</td></tr>`).join('') +
         `</table></div>`;
     } else if (btn.dataset.uact === 'delete') {
       const name = (btn.dataset.name || '').trim() || 'this user';
@@ -645,7 +665,7 @@ async function loadUnitsList() {
   try {
     allUnits = await api('/admin/units');
     renderUnitsTable();
-  } catch (err) { $('#unitsTable').innerHTML = `<p class="msg">${err.message}</p>`; }
+  } catch (err) { $('#unitsTable').innerHTML = `<p class="msg">${esc(err.message)}</p>`; }
 }
 function renderUnitsTable() {
   const q = ($('#unitsFilter').value || '').trim().toLowerCase();
@@ -658,14 +678,14 @@ function renderUnitsTable() {
   $('#unitsTable').innerHTML = '<div style="overflow-x:auto"><table>'
     + '<tr><th>Unit</th><th>Floor</th><th>Type</th><th>Business</th><th>Owner</th><th>Owner phone</th><th>Owner email</th><th></th></tr>'
     + rows.map((u) => `<tr>
-        <td>${u.unit_number}</td>
-        <td>${u.floor ?? '—'}</td>
+        <td>${esc(u.unit_number)}</td>
+        <td>${esc(u.floor ?? '—')}</td>
         <td>${u.kind === 'commercial' ? 'Commercial' : 'Residential'}</td>
-        <td>${u.business_name || '—'}</td>
-        <td>${u.owner_name || '—'}</td>
-        <td>${u.owner_phone || '—'}</td>
-        <td>${u.owner_email || '—'}</td>
-        <td><button type="button" data-edit-unit="${u.unit_number}">Edit</button></td>
+        <td>${esc(u.business_name || '—')}</td>
+        <td>${esc(u.owner_name || '—')}</td>
+        <td>${esc(u.owner_phone || '—')}</td>
+        <td>${esc(u.owner_email || '—')}</td>
+        <td><button type="button" data-edit-unit="${esc(u.unit_number)}">Edit</button></td>
       </tr>`).join('') + '</table></div>';
 }
 const _refreshUnits = $('#refreshUnits');
@@ -766,20 +786,20 @@ if (unitImportForm) {
 async function loadOverrideCode() {
   try {
     const r = await api('/admin/override-code');
-    $('#overrideCodeBox').innerHTML = `<div class="stat" style="max-width:260px"><div class="n" style="font-family:monospace">${r.current.code}</div><div class="l">${r.current.week}</div></div>`;
+    $('#overrideCodeBox').innerHTML = `<div class="stat" style="max-width:260px"><div class="n" style="font-family:monospace">${esc(r.current.code)}</div><div class="l">${esc(r.current.week)}</div></div>`;
   } catch { $('#overrideCodeBox').textContent = 'Unavailable.'; }
 }
 $('#refreshAudit').onclick = loadAudit;
 async function loadAudit() {
   const rows = await api('/admin/audit?limit=100');
   $('#auditTable').innerHTML = `<table><tr><th>Time</th><th>Action</th><th>Actor</th><th>Unit</th><th>Plate</th></tr>` +
-    rows.map((r) => `<tr><td>${new Date(r.created_at).toLocaleString()}</td><td>${r.action}</td><td>${r.actor_name || '—'} ${r.actor_role ? '(' + (ROLE_LABELS[r.actor_role] || r.actor_role) + ')' : ''}</td><td>${r.unit_number || '—'}</td><td>${r.visitor_plate || '—'}</td></tr>`).join('') + `</table>`;
+    rows.map((r) => `<tr><td>${esc(new Date(r.created_at).toLocaleString())}</td><td>${esc(r.action)}</td><td>${esc(r.actor_name || '—')} ${r.actor_role ? '(' + esc(ROLE_LABELS[r.actor_role] || r.actor_role) + ')' : ''}</td><td>${esc(r.unit_number || '—')}</td><td>${esc(r.visitor_plate || '—')}</td></tr>`).join('') + `</table>`;
 }
 $('#refreshAuthAudit').onclick = loadAuthAudit;
 async function loadAuthAudit() {
   const rows = await api('/admin/auth-audit?limit=100');
   $('#authAuditTable').innerHTML = `<table><tr><th>Time</th><th>Event</th><th>User</th><th>IP</th></tr>` +
-    rows.map((r) => `<tr><td>${new Date(r.created_at).toLocaleString()}</td><td><span class="badge ${r.success ? 'VALID' : 'REVOKED'}">${r.event}</span></td><td>${r.actor_name || r.username} ${r.actor_role ? '(' + (ROLE_LABELS[r.actor_role] || r.actor_role) + ')' : ''}</td><td>${r.ip || '—'}</td></tr>`).join('') + `</table>`;
+    rows.map((r) => `<tr><td>${esc(new Date(r.created_at).toLocaleString())}</td><td><span class="badge ${r.success ? 'VALID' : 'REVOKED'}">${esc(r.event)}</span></td><td>${esc(r.actor_name || r.username)} ${r.actor_role ? '(' + esc(ROLE_LABELS[r.actor_role] || r.actor_role) + ')' : ''}</td><td>${esc(r.ip || '—')}</td></tr>`).join('') + `</table>`;
 }
 
 // --- Resident requests (staff review) ---
@@ -789,18 +809,18 @@ async function loadRequests() {
   if (!rows.length) { $('#requestsList').innerHTML = '<p>No pending requests.</p>'; refreshPendingBadge(); return; }
   $('#requestsList').innerHTML = rows.map((r) => {
     const name = [r.visitor_first_name, r.visitor_last_name].filter(Boolean).join(' ') || '—';
-    const dur = r.duration_preset === 'tomorrow_noon' ? 'Until noon tomorrow' : 'Rest of today';
+    const dur = DURATION_LABELS[r.duration_preset] || r.duration_preset || '—';
     const sched = r.starts_at ? `Scheduled: ${new Date(r.starts_at).toLocaleString()}` : 'Start: now';
-    return `<div class="result-card" data-id="${r.id}">
-      <h3>Unit ${r.unit_number} ${r.kind === 'commercial' ? '(commercial)' : ''}</h3>
-      <p>Requested by <b>${r.requester_name}</b>${r.requester_contact ? ' · ' + r.requester_contact : ''} · ${new Date(r.created_at).toLocaleString()}</p>
-      <p>Visitor <b>${name}</b> · Plate <b>${r.visitor_plate}</b>${r.visitor_region ? ' (' + r.visitor_region.replace('-', ' ') + ')' : ''} · ${dur} · ${sched}</p>
-      ${r.note ? `<p>Note: ${r.note}</p>` : ''}
+    return `<div class="result-card" data-id="${esc(r.id)}">
+      <h3>Unit ${esc(r.unit_number)} ${r.kind === 'commercial' ? '(commercial)' : ''}</h3>
+      <p>Requested by <b>${esc(r.requester_name)}</b>${r.requester_contact ? ' · ' + esc(r.requester_contact) : ''} · ${esc(new Date(r.created_at).toLocaleString())}</p>
+      <p>Visitor <b>${esc(name)}</b> · Plate <b>${esc(r.visitor_plate)}</b>${r.visitor_region ? ' (' + esc(r.visitor_region.replace('-', ' ')) + ')' : ''} · ${esc(dur)} · ${esc(sched)}</p>
+      ${r.note ? `<p>Note: ${esc(r.note)}</p>` : ''}
       <div class="btn-row">
-        <button type="button" data-action="approve" data-id="${r.id}">Approve &amp; issue</button>
-        <button type="button" class="danger" data-action="deny" data-id="${r.id}">Deny</button>
+        <button type="button" data-action="approve" data-id="${esc(r.id)}">Approve &amp; issue</button>
+        <button type="button" class="danger" data-action="deny" data-id="${esc(r.id)}">Deny</button>
       </div>
-      <p class="msg" id="reqmsg-${r.id}"></p>
+      <p class="msg" id="reqmsg-${esc(r.id)}"></p>
     </div>`;
   }).join('');
 }
@@ -841,7 +861,7 @@ async function approveRequest(id) {
 };
 function showApproved(msg, r) {
   const mail = r.emailed ? ' · emailed to resident' : (r.emailConfigured ? '' : ' · (email not configured)');
-  msg.innerHTML = `✓ Approved. Code <b>${r.shortCode}</b>. <a href="${r.printUrl}" target="_blank">Print pass</a>${mail}`;
+  msg.innerHTML = `✓ Approved. Code <b>${esc(r.shortCode)}</b>. <a href="${esc(r.printUrl)}" target="_blank">Print pass</a>${mail}`;
 }
 async function denyRequest(id) {
   const note = prompt('Reason for denial (optional):') || '';
@@ -861,15 +881,15 @@ async function loadSpots() {
     </div>`;
   $('#spotsLive').innerHTML = s.live.length ? s.live.map((p) => `
     <div class="result-card">
-      <p>Unit <b>${p.unit_number}</b> · Plate <b>${p.visitor_plate}</b>${p.visitor_region ? ' (' + p.visitor_region.replace('-', ' ') + ')' : ''} · ${p.visitor_name || 'visitor'}</p>
-      <p class="hint">Until ${new Date(p.expires_at).toLocaleString()}</p>
+      <p>Unit <b>${esc(p.unit_number)}</b> · Plate <b>${esc(p.visitor_plate)}</b>${p.visitor_region ? ' (' + esc(p.visitor_region.replace('-', ' ')) + ')' : ''} · ${esc(p.visitor_name || 'visitor')}</p>
+      <p class="hint">Until ${esc(new Date(p.expires_at).toLocaleString())}</p>
       <div class="btn-row">
-        <button type="button" data-action="vacate" data-id="${p.id}">Mark vacated (free spot)</button>
-        <button type="button" class="danger" data-action="cancel" data-id="${p.id}">Cancel pass</button>
+        <button type="button" data-action="vacate" data-id="${esc(p.id)}">Mark vacated (free spot)</button>
+        <button type="button" class="danger" data-action="cancel" data-id="${esc(p.id)}">Cancel pass</button>
       </div>
     </div>`).join('') : '<p>No spaces occupied right now.</p>';
   $('#spotsUpcoming').innerHTML = s.upcoming.length ? `<table><tr><th>Starts</th><th>Unit</th><th>Plate</th><th>Until</th><th>Authorized by</th><th></th></tr>` +
-    s.upcoming.map((p) => `<tr><td>${new Date(p.starts_at).toLocaleString()}</td><td>${p.unit_number}</td><td>${p.visitor_plate}</td><td>${new Date(p.expires_at).toLocaleString()}</td><td>${p.authorized_by || '—'}</td><td><button type="button" class="danger" data-action="cancel" data-id="${p.id}">Cancel</button></td></tr>`).join('') + `</table>` : '<p>Nothing scheduled.</p>';
+    s.upcoming.map((p) => `<tr><td>${esc(new Date(p.starts_at).toLocaleString())}</td><td>${esc(p.unit_number)}</td><td>${esc(p.visitor_plate)}</td><td>${esc(new Date(p.expires_at).toLocaleString())}</td><td>${esc(p.authorized_by || '—')}</td><td><button type="button" class="danger" data-action="cancel" data-id="${esc(p.id)}">Cancel</button></td></tr>`).join('') + `</table>` : '<p>Nothing scheduled.</p>';
   if (tagMode) await loadTagsBoard();
 }
 async function loadTagsBoard() {
@@ -882,16 +902,16 @@ async function loadTagsBoard() {
   board.innerHTML = tags.map((t) => {
     const badge = t.status === 'issued' ? 'issued' : (t.status === 'lost' ? 'lost' : 'available');
     const bound = t.unit_number
-      ? `<p class="hint">Unit <b>${t.unit_number}</b> · Plate <b>${t.visitor_plate || '—'}</b>${t.visitor_name ? ' · ' + t.visitor_name : ''}</p>`
+      ? `<p class="hint">Unit <b>${esc(t.unit_number)}</b> · Plate <b>${esc(t.visitor_plate || '—')}</b>${t.visitor_name ? ' · ' + esc(t.visitor_name) : ''}</p>`
       : '<p class="hint">Not assigned — ready to hand out.</p>';
     return `<div class="result-card tag-card">
-      <p>🅿️ Physical <b>Tag #${t.tag_number}</b> <span class="tag-badge ${badge}">${badge}</span></p>
+      <p>🅿️ Physical <b>Tag #${esc(t.tag_number)}</b> <span class="tag-badge ${badge}">${esc(badge)}</span></p>
       ${bound}
       <div class="btn-row">
-        ${t.status === 'issued' ? `<button type="button" data-tag-return="${t.tag_number}">Return tag (free spot)</button>` : ''}
-        <button type="button" class="secondary" data-tag-history="${t.tag_number}">History</button>
+        ${t.status === 'issued' ? `<button type="button" data-tag-return="${esc(t.tag_number)}">Return tag (free spot)</button>` : ''}
+        <button type="button" class="secondary" data-tag-history="${esc(t.tag_number)}">History</button>
       </div>
-      <div class="tag-history" id="tagHistory-${t.tag_number}" hidden></div>
+      <div class="tag-history" id="tagHistory-${esc(t.tag_number)}" hidden></div>
     </div>`;
   }).join('');
 }
@@ -920,7 +940,7 @@ $('#tagsBoard') && $('#tagsBoard').addEventListener('click', async (e) => {
         const outcome = p.status === 'revoked' ? 'Revoked'
           : p.vacated_at ? 'Returned'
           : p.status === 'active' ? 'Active' : p.status;
-        return `<tr><td>${new Date(p.issued_at).toLocaleString()}</td><td>${p.unit_number}</td><td>${p.visitor_plate}</td><td>${p.visitor_name || '—'}</td><td>${p.issuer_name || '—'}</td><td>${outcome}</td></tr>`;
+        return `<tr><td>${esc(new Date(p.issued_at).toLocaleString())}</td><td>${esc(p.unit_number)}</td><td>${esc(p.visitor_plate)}</td><td>${esc(p.visitor_name || '—')}</td><td>${esc(p.issuer_name || '—')}</td><td>${esc(outcome)}</td></tr>`;
       }).join('') + `</table>`;
   }
 });
@@ -997,7 +1017,7 @@ async function loadExportDatasets() {
   loadIntegrationStatus();
   if ($('#exportDataset').options.length) return;
   const sets = await api('/admin/export/datasets');
-  $('#exportDataset').innerHTML = sets.map((s) => `<option value="${s.id}">${s.label}</option>`).join('');
+  $('#exportDataset').innerHTML = sets.map((s) => `<option value="${esc(s.id)}">${esc(s.label)}</option>`).join('');
 }
 async function loadIntegrationStatus() {
   try {
@@ -1074,13 +1094,13 @@ async function loadAccount() {
   $('#accountMsg').textContent = '';
 
   $('#accountBox').innerHTML = `
-    <p><b>${a.full_name}</b> · ${ROLE_LABELS[a.role] || a.role}${a.is_superuser ? ' · <span class="badge VALID">Superuser</span>' : ''}</p>
-    <p>Email: ${a.email || '<i>not linked</i>'} ${a.sso_provider ? `· linked to ${a.sso_provider}` : ''}</p>`;
+    <p><b>${esc(a.full_name)}</b> · ${esc(ROLE_LABELS[a.role] || a.role)}${a.is_superuser ? ' · <span class="badge VALID">Superuser</span>' : ''}</p>
+    <p>Email: ${a.email ? esc(a.email) : '<i>not linked</i>'} ${a.sso_provider ? `· linked to ${esc(a.sso_provider)}` : ''}</p>`;
   try {
     const { sso } = await api('/auth/providers');
     const labels = { google: 'Link Google', microsoft: 'Link Microsoft' };
     $('#linkButtons').innerHTML = (sso || []).length
-      ? sso.map((p) => `<a href="/api/auth/sso/${p}/link"><button type="button">${labels[p] || p}</button></a>`).join('')
+      ? sso.map((p) => `<a href="/api/auth/sso/${encodeURIComponent(p)}/link"><button type="button">${esc(labels[p] || p)}</button></a>`).join('')
       : '<span class="hint">Google/Microsoft sign-in isn’t configured on this server yet.</span>';
   } catch {}
 }
@@ -1126,8 +1146,8 @@ $('#pwForm').onsubmit = async (e) => {
 async function loadBoard() {
   const s = await api('/board/summary');
   const t = s.totals;
-  const months = s.passesByMonth.map((m) => `<tr><td>${m.month}</td><td>${m.passes}</td></tr>`).join('');
-  const units = s.busiestUnits.map((u) => `<tr><td>${u.unit_number}</td><td>${u.passes_used}</td></tr>`).join('');
+  const months = s.passesByMonth.map((m) => `<tr><td>${esc(m.month)}</td><td>${esc(m.passes)}</td></tr>`).join('');
+  const units = s.busiestUnits.map((u) => `<tr><td>${esc(u.unit_number)}</td><td>${esc(u.passes_used)}</td></tr>`).join('');
   $('#boardSummary').innerHTML = `
     <div class="stats">
       <div class="stat"><div class="n">${t.total_passes}</div><div class="l">Passes ${s.year}</div></div>

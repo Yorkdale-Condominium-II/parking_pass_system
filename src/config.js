@@ -31,6 +31,10 @@ module.exports = {
     : process.env.NODE_ENV === 'production',
   port: parseInt(process.env.PORT || '3000', 10),
   env: process.env.NODE_ENV || 'development',
+  // Number of reverse proxies to trust for X-Forwarded-For (default 0 = trust
+  // none). Set to 1 only behind a single TLS terminator that strips a
+  // client-supplied X-Forwarded-For, otherwise req.ip can be spoofed.
+  trustProxy: parseInt(process.env.TRUST_PROXY || '0', 10),
   // App version, surfaced in the UI header/tab. Single source of truth is
   // package.json — bump it there with each committed change.
   version: require('./../package.json').version,

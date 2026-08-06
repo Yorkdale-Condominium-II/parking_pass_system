@@ -3,6 +3,13 @@
 // this never touches privileged endpoints.
 const $ = (s) => document.querySelector(s);
 
+// Escape server-supplied values before they flow into innerHTML.
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  })[c]);
+}
+
 let regionData = null;
 async function loadRegions() {
   const res = await fetch('/api/resident/regions');
@@ -12,7 +19,7 @@ async function loadRegions() {
 function populateRegions() {
   const country = $('#visitorCountry').value;
   const list = regionData[country] || [];
-  $('#visitorRegion').innerHTML = list.map((r) => `<option value="${r.code}">${r.code} — ${r.name}</option>`).join('');
+  $('#visitorRegion').innerHTML = list.map((r) => `<option value="${esc(r.code)}">${esc(r.code)} — ${esc(r.name)}</option>`).join('');
   if (country === 'CA' && list.some((r) => r.code === 'ON')) $('#visitorRegion').value = 'ON';
 }
 $('#visitorCountry').onchange = populateRegions;
@@ -42,8 +49,8 @@ $('#reqForm').onsubmit = async (e) => {
     $('#reqResult').innerHTML = `
       <div class="result-card">
         <h3>✓ Request submitted</h3>
-        <p>${data.message}</p>
-        <p>Your reference code: <b style="font-family:monospace;font-size:22px;letter-spacing:2px">${data.reference}</b></p>
+        <p>${esc(data.message)}</p>
+        <p>Your reference code: <b style="font-family:monospace;font-size:22px;letter-spacing:2px">${esc(data.reference)}</b></p>
         <p class="hint">Keep this code — use it below to check your request's status. If you gave an email, your approved pass will be sent there.</p>
         <button type="button" id="againBtn">Submit another request</button>
       </div>`;
@@ -67,14 +74,14 @@ $('#statusForm').onsubmit = async (e) => {
     const cls = d.status === 'approved' ? 'VALID' : d.status === 'denied' ? 'REVOKED' : 'EXPIRED';
     $('#statusResult').innerHTML = `
       <div class="result-card">
-        <span class="badge ${cls}">${label}</span>
-        <p>Unit ${d.unit} · Plate ${d.visitorPlate}</p>
-        <p>Submitted ${new Date(d.submittedAt).toLocaleString()}</p>
-        ${d.decidedAt ? `<p>Decided ${new Date(d.decidedAt).toLocaleString()}</p>` : ''}
-        ${d.note ? `<p>Staff note: ${d.note}</p>` : ''}
+        <span class="badge ${cls}">${esc(label)}</span>
+        <p>Unit ${esc(d.unit)} · Plate ${esc(d.visitorPlate)}</p>
+        <p>Submitted ${esc(new Date(d.submittedAt).toLocaleString())}</p>
+        ${d.decidedAt ? `<p>Decided ${esc(new Date(d.decidedAt).toLocaleString())}</p>` : ''}
+        ${d.note ? `<p>Staff note: ${esc(d.note)}</p>` : ''}
         ${d.status === 'approved' ? '<p>If you provided an email, your pass has been sent there.</p>' : ''}
       </div>`;
-  } catch (err) { $('#statusResult').innerHTML = `<p class="error">${err.message}</p>`; }
+  } catch (err) { $('#statusResult').innerHTML = `<p class="error">${esc(err.message)}</p>`; }
 };
 
 fetch('/api/settings').then((r) => r.json()).then((s) => {

@@ -8,17 +8,28 @@ const config = require('./config');
 
 const app = express();
 
-// Trust a single reverse proxy (e.g. a TLS terminator) so req.ip and the
-// Secure-cookie decision reflect the real client connection over HTTPS.
-app.set('trust proxy', 1);
+// Trust exactly as many reverse proxies as configured (default 0 = trust none),
+// so req.ip and the Secure-cookie decision reflect the real client only when a
+// proxy is actually in front. Trusting a hop that does NOT strip a
+// client-supplied X-Forwarded-For would let clients spoof their IP.
+app.set('trust proxy', config.trustProxy);
+if (config.trustProxy > 0 && config.env === 'production') {
+  // eslint-disable-next-line no-console
+  console.warn('[security] trust proxy = ' + config.trustProxy
+    + ': ensure the reverse proxy strips X-Forwarded-For from clients');
+}
 
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      imgSrc: ["'self'", 'data:'],       // QR codes are embedded as data URIs
-      scriptSrc: ["'self'", "'unsafe-inline'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", 'data:'],           // QR codes are embedded as data URIs
+      scriptSrc: ["'self'"],
+      scriptSrcAttr: ["'none'"],             // blocks inline on*="…" handlers
+      styleSrc: ["'self'", "'unsafe-inline'"], // styles still inline; revisit later
+      objectSrc: ["'none'"],
+      baseUri: ["'self'"],
+      frameAncestors: ["'none'"],
     },
   },
 }));
