@@ -13,6 +13,12 @@ const backupArchive = require('./../services/backupArchive');
 
 const router = express.Router();
 
+// Refused when a data-deletion action can't first email the oversight backup —
+// so records can never be destroyed without an off-system copy being delivered.
+const BACKUP_REQUIRED_MSG =
+  'This action was blocked because the required full-data backup could not be emailed to the oversight contact. '
+  + 'Configure email (or fix the send failure) and try again — data cannot be deleted without a delivered backup.';
+
 // The weekly override code is viewable by Management AND Board (they distribute
 // it), so that one route is mounted before the management-only gate below.
 router.get('/override-code', requireAuth, requireRole('management'), (req, res) => {
@@ -566,8 +572,11 @@ router.post('/year-end/clear', async (req, res) => {
   if (!req.body || req.body.confirm !== true) {
     return res.status(400).json({ error: 'confirmation_required' });
   }
-  // Email a full backup of everything BEFORE deleting anything (best-effort).
+  // Email a full backup of everything BEFORE deleting anything. This is an
+  // anti-tampering safeguard: the delete is REFUSED unless the oversight copy
+  // was actually delivered, so no one can quietly destroy records.
   const backup = await backupArchive.emailFullBackup('Year-end clear', req.user);
+  if (!backup.sent) return res.status(409).json({ error: 'backup_required', message: BACKUP_REQUIRED_MSG });
   const year = new Date().getFullYear();
   const deleted = await db.withTransaction(async (client) => {
     const a = await client.query(`DELETE FROM pass_audit_log WHERE EXTRACT(YEAR FROM created_at) < $1`, [year]);
@@ -607,6 +616,7 @@ router.post('/clear-logs', async (req, res) => {
     return res.status(400).json({ error: 'confirmation_required' });
   }
   const backup = await backupArchive.emailFullBackup('Clear all logs', req.user);
+  if (!backup.sent) return res.status(409).json({ error: 'backup_required', message: BACKUP_REQUIRED_MSG });
   const deleted = await db.withTransaction(async (client) => {
     // Historical passes = revoked, vacated, or already expired (not live/scheduled).
     const passes = await client.query(
@@ -640,6 +650,7 @@ router.post('/reset-activity', async (req, res) => {
     return res.status(400).json({ error: 'confirmation_required' });
   }
   const backup = await backupArchive.emailFullBackup('Full reset of all visitor data', req.user);
+  if (!backup.sent) return res.status(409).json({ error: 'backup_required', message: BACKUP_REQUIRED_MSG });
   await db.withTransaction(async (client) => {
     await client.query(
       `TRUNCATE pass_requests, pass_audit_log, auth_audit_log, override_grants,

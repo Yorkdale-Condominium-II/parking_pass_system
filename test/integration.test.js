@@ -31,6 +31,13 @@ const password = require('../src/auth/password');
 const barcode = require('../src/crypto/barcode');
 const sso = require('../src/auth/sso');
 
+// Destructive actions now REQUIRE a delivered oversight backup email. SMTP is
+// not configured in tests, so stub the backup to "sent" for the tests that
+// exercise deletion. `realEmailBackup` is kept so we can also test the block.
+const backupArchive = require('../src/services/backupArchive');
+const realEmailBackup = backupArchive.emailFullBackup;
+backupArchive.emailFullBackup = async () => ({ sent: true });
+
 let base;      // http://127.0.0.1:<port>
 let server;
 
@@ -1096,11 +1103,9 @@ test('reset-activity wipes all passes/registry but keeps units and users', async
 
   const reset = await mgr('POST', '/api/admin/reset-activity', { confirm: 'RESET' });
   assert.equal(reset.status, 200);
-  // A pre-delete backup is attempted; without SMTP configured it's not sent.
-  assert.equal(reset.body.backupEmailed, false);
-  // The backup workbook itself builds successfully (mailer is the only no-op).
-  const backupArchive = require('../src/services/backupArchive');
-  const b = await backupArchive.emailFullBackup('test', { username: 'manager1' });
+  assert.equal(reset.body.backupEmailed, true); // stubbed as delivered in tests
+  // The REAL backup builder produces a workbook (only the send is a no-op here).
+  const b = await realEmailBackup('test', { username: 'manager1' });
   assert.equal(b.skipped, true); // built OK, just not sent (no SMTP in tests)
 
   // Everything visitor-related is gone...
@@ -1116,6 +1121,25 @@ test('reset-activity wipes all passes/registry but keeps units and users', async
   assert.ok(board.body.totalUnits >= 1);
   const users = await mgr('GET', '/api/admin/users');
   assert.ok(users.body.some((u) => u.username === 'manager1'));
+});
+
+test('data deletion is BLOCKED unless the oversight backup email is delivered', async () => {
+  const mgr = makeClient();
+  await mgr('POST', '/api/auth/login', { username: 'manager1', password: 'changeme123' });
+  // Simulate the backup email failing to send.
+  backupArchive.emailFullBackup = async () => ({ sent: false, skipped: true });
+  try {
+    const clear = await mgr('POST', '/api/admin/clear-logs', { confirm: true });
+    assert.equal(clear.status, 409);
+    assert.equal(clear.body.error, 'backup_required');
+    const reset = await mgr('POST', '/api/admin/reset-activity', { confirm: 'RESET' });
+    assert.equal(reset.status, 409);
+    assert.equal(reset.body.error, 'backup_required');
+    const ye = await mgr('POST', '/api/admin/year-end/clear', { confirm: true });
+    assert.equal(ye.status, 409);
+  } finally {
+    backupArchive.emailFullBackup = async () => ({ sent: true }); // restore for other tests
+  }
 });
 
 test('integration status is management-only; sheets mirror is a no-op when unconfigured', async () => {

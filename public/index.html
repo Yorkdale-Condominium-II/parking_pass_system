@@ -305,6 +305,7 @@
     <details class="card sect" id="clearLogsCard">
       <summary><h2>Clear all logs</h2></summary>
       <p class="hint">⚠ Deletes all audit logs and completed/historical passes and requests (live and scheduled passes, and pending requests, are kept). This erases the per-user history. Download your data first — this cannot be undone.</p>
+      <p class="hint">🔒 A full backup is automatically emailed to the oversight contact first; the deletion is refused if that email can't be delivered.</p>
       <button type="button" id="clearLogsBtn" class="danger">Clear all logs now</button>
       <p class="msg" id="clearLogsMsg"></p>
     </details>
@@ -312,6 +313,7 @@
     <details class="card sect" id="resetActivityCard">
       <summary><h2>Reset all visitor data</h2></summary>
       <p class="hint">⚠ Full clean slate — deletes <b>every</b> pass (including live and future-scheduled ones), all requests, all logs, and the resident/vehicle registry. Your <b>units</b> and <b>user accounts</b> are kept. Intended for clearing test data before go-live. This cannot be undone — export first.</p>
+      <p class="hint">🔒 A full backup is automatically emailed to the oversight contact first; the reset is refused if that email can't be delivered.</p>
       <button type="button" id="resetActivityBtn" class="danger">Reset all visitor data…</button>
       <p class="msg" id="resetActivityMsg"></p>
     </details>

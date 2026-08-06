@@ -546,7 +546,7 @@ $('#clearLogsBtn').onclick = async () => {
     const r = await api('/admin/clear-logs', { method: 'POST', body: { confirm: true } });
     $('#clearLogsMsg').textContent = `Cleared: ${r.deleted.pass_audit + r.deleted.auth_audit} log rows, ${r.deleted.passes} historical passes, ${r.deleted.requests} requests.` + backupNote(r);
     loadAudit(); loadAuthAudit(); loadUsers();
-  } catch (err) { $('#clearLogsMsg').textContent = err.message; }
+  } catch (err) { $('#clearLogsMsg').textContent = err.data?.message || err.message; }
 };
 
 // --- Reset all visitor data (full clean slate) ---
@@ -560,7 +560,7 @@ $('#resetActivityBtn').onclick = async () => {
     loadAudit(); loadAuthAudit(); loadUsers(); loadUnitsList();
   } catch (err) {
     $('#resetActivityMsg').textContent = err.data?.error === 'superuser_required'
-      ? 'Only a superuser can do this.' : err.message;
+      ? 'Only a superuser can do this.' : (err.data?.message || err.message);
   }
 };
 $('#unitForm').onsubmit = async (e) => {
@@ -883,7 +883,7 @@ $('#yearEndBox').addEventListener('click', async (e) => {
     const r = await api('/admin/year-end/clear', { method: 'POST', body: { confirm: true } });
     $('#yearEndMsg').textContent = `Cleared: ${r.deleted.passes} passes, ${r.deleted.requests} requests, ${r.deleted.pass_audit + r.deleted.auth_audit} audit rows.` + backupNote(r);
     setTimeout(loadYearEnd, 1200);
-  } catch (err) { $('#yearEndMsg').textContent = err.message; }
+  } catch (err) { $('#yearEndMsg').textContent = err.data?.message || err.message; }
 });
 // A note appended to destructive-action results about the oversight backup email.
 function backupNote(r) {
