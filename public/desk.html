@@ -40,10 +40,12 @@
 
       <label>Duration</label>
       <div class="btn-row" id="durationRow">
-        <button type="button" class="dur active" data-preset="today">Rest of today (until midnight)</button>
-        <button type="button" class="dur" data-preset="tomorrow_noon">Until noon tomorrow</button>
+        <button type="button" class="dur active" data-preset="short_stay">Short Stay</button>
+        <button type="button" class="dur" data-preset="overnight">Overnight</button>
+        <button type="button" class="dur" data-preset="today" hidden>Rest of today (legacy)</button>
       </div>
-      <input type="hidden" name="durationPreset" id="durationPreset" value="today">
+      <input type="hidden" name="durationPreset" id="durationPreset" value="short_stay">
+      <p class="hint" id="durationHint"></p>
       <label>Schedule for later (optional) <input type="datetime-local" name="startsAt"></label>
 
       <hr>

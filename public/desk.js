@@ -38,13 +38,25 @@ $('#deskForm').unitNumber.addEventListener('input', (e) => {
     ? (u.kind === 'commercial' ? `Commercial unit — ${u.business_name || ''}` : 'Residential unit')
     : (e.target.value ? '⚠ Not a known unit — issuance will be rejected.' : '');
 });
+function updateDurationHint(preset) {
+  const map = {
+    short_stay: 'Short Stay: expires after 6 hours or 11 PM local, whichever comes first.',
+    overnight: 'Overnight: issued for stays longer than 6 hours that cross midnight. Expires at 8 AM.',
+    today: 'Rest of today (legacy).',
+    tomorrow_noon: 'Until noon tomorrow (legacy).',
+  };
+  const h = $('#durationHint');
+  if (h) h.textContent = map[preset] || '';
+}
 document.querySelectorAll('#durationRow .dur').forEach((b) => {
   b.onclick = () => {
     document.querySelectorAll('#durationRow .dur').forEach((x) => x.classList.remove('active'));
     b.classList.add('active');
     $('#durationPreset').value = b.dataset.preset;
+    updateDurationHint(b.dataset.preset);
   };
 });
+updateDurationHint(($('#durationPreset') || {}).value || 'short_stay');
 
 async function post(body) {
   const res = await fetch('/api/desk/issue', {
@@ -86,8 +98,9 @@ $('#deskForm').onsubmit = async (e) => {
         <a href="${esc(r.printUrl)}" target="_blank"><button type="button">🖨 Open printable pass</button></a>
       </div>`;
     e.target.reset();
-    $('#durationPreset').value = 'today';
+    $('#durationPreset').value = 'short_stay';
     document.querySelectorAll('#durationRow .dur').forEach((x, i) => x.classList.toggle('active', i === 0));
+    updateDurationHint('short_stay');
     populateRegions();
   } catch (err) {
     $('#deskError').textContent = err.data?.error === 'invalid_officer_credentials'

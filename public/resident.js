@@ -24,13 +24,23 @@ function populateRegions() {
 }
 $('#visitorCountry').onchange = populateRegions;
 
+function updateDurationHint(preset) {
+  const map = {
+    short_stay: 'Short Stay: valid for up to 6 hours, and no later than 11 PM.',
+    overnight: 'Overnight: for a visitor staying past midnight. Valid until 8 AM.',
+  };
+  const h = $('#durationHint');
+  if (h) h.textContent = map[preset] || '';
+}
 document.querySelectorAll('#durationRow .dur').forEach((b) => {
   b.onclick = () => {
     document.querySelectorAll('#durationRow .dur').forEach((x) => x.classList.remove('active'));
     b.classList.add('active');
     $('#durationPreset').value = b.dataset.preset;
+    updateDurationHint(b.dataset.preset);
   };
 });
+updateDurationHint(($('#durationPreset') || {}).value || 'short_stay');
 
 $('#reqForm').onsubmit = async (e) => {
   e.preventDefault();

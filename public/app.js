@@ -313,13 +313,25 @@ $('#lookupResult').addEventListener('click', async (e) => {
 });
 
 // --- Issue ---
+function updateDurationHint(preset) {
+  const map = {
+    short_stay: 'Short Stay: expires after 6 hours or 11 PM local, whichever comes first.',
+    overnight: 'Overnight: issued for stays longer than 6 hours that cross midnight. Expires at 8 AM.',
+    today: 'Rest of today (legacy).',
+    tomorrow_noon: 'Until noon tomorrow (legacy).',
+  };
+  const h = $('#durationHint');
+  if (h) h.textContent = map[preset] || '';
+}
 document.querySelectorAll('#durationRow .dur').forEach((b) => {
   b.onclick = () => {
     document.querySelectorAll('#durationRow .dur').forEach((x) => x.classList.remove('active'));
     b.classList.add('active');
     $('#durationPreset').value = b.dataset.preset;
+    updateDurationHint(b.dataset.preset);
   };
 });
+updateDurationHint(($('#durationPreset') || {}).value || 'short_stay');
 $('#overrideChk').onchange = (e) => { $('#overrideFields').hidden = !e.target.checked; };
 // Summarise what happened with the auto-email on issue (tag edition).
 function autoEmailNote(r) {
@@ -402,8 +414,9 @@ $('#issueForm').onsubmit = async (e) => {
     if (r.printInstead) window.open(r.printUrl, '_blank');
     e.target.reset();
     $('#overrideFields').hidden = true;
-    $('#durationPreset').value = 'today';
+    $('#durationPreset').value = 'short_stay';
     document.querySelectorAll('#durationRow .dur').forEach((x, i) => x.classList.toggle('active', i === 0));
+    updateDurationHint('short_stay');
     populateRegions();
     syncVisitorEmailUI();
     loadNextTag();   // the tag just claimed is gone; show the next one

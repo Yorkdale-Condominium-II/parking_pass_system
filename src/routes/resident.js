@@ -55,7 +55,11 @@ router.post('/requests', submitLimiter, async (req, res) => {
   if (region && !regions.isValidRegion(country, region)) {
     return res.status(400).json({ error: 'invalid_region' });
   }
-  const preset = durationPreset === 'tomorrow_noon' ? 'tomorrow_noon' : 'today';
+  // Accept the new Short Stay / Overnight modes as well as the retained legacy
+  // presets; anything unexpected falls back to Short Stay. The chosen mode is
+  // stored on the request and drives the pass's expiry when staff approve it.
+  const ALLOWED_PRESETS = ['short_stay', 'overnight', 'today', 'tomorrow_noon'];
+  const preset = ALLOWED_PRESETS.includes(durationPreset) ? durationPreset : 'short_stay';
 
   let scheduledStart = null;
   if (startsAt) {

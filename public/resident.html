@@ -46,10 +46,11 @@
 
       <label>When is the pass needed?</label>
       <div class="btn-row" id="durationRow">
-        <button type="button" class="dur active" data-preset="today">Rest of today (until midnight)</button>
-        <button type="button" class="dur" data-preset="tomorrow_noon">Until noon tomorrow</button>
+        <button type="button" class="dur active" data-preset="short_stay">Short Stay</button>
+        <button type="button" class="dur" data-preset="overnight">Overnight</button>
       </div>
-      <input type="hidden" name="durationPreset" id="durationPreset" value="today">
+      <input type="hidden" name="durationPreset" id="durationPreset" value="short_stay">
+      <p class="hint" id="durationHint"></p>
 
       <label>Schedule for later (optional) <input type="datetime-local" name="startsAt"></label>
       <small class="hint">Leave blank if the visitor is arriving now. Spaces are limited (5 total), so scheduling ahead helps.</small>
