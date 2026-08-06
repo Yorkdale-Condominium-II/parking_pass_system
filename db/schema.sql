@@ -447,3 +447,44 @@ CREATE INDEX IF NOT EXISTS idx_auth_sessions_active ON auth_sessions(jti)
     WHERE revoked_at IS NULL;
 
 COMMIT;
+
+-- ============================================================================
+--  v17 migration — new duration model. Records the duration MODE used for each
+--  pass (short_stay | overnight | today | tomorrow_noon) and enforces at most
+--  one active pass per unit per property-local calendar day via a partial
+--  unique index. Additive + idempotent.
+--
+--  NOTE: the prompt's `ALTER TYPE pass_status IS NOT NULL;` placeholder is not
+--  valid SQL and is intentionally omitted — the duration model is carried by a
+--  plain text column, not by extending the pass_status enum.
+-- ============================================================================
+BEGIN;
+
+-- Which duration preset produced this pass's expiry. Historical rows default to
+-- 'short_stay' (a label only; their stored expires_at is unchanged).
+ALTER TABLE visitor_passes
+    ADD COLUMN IF NOT EXISTS duration_mode TEXT NOT NULL DEFAULT 'short_stay';
+CREATE INDEX IF NOT EXISTS idx_pass_duration_mode ON visitor_passes(duration_mode);
+
+-- Property-local calendar day of the pass start, derived immutably from
+-- starts_at. Fixed to America/Toronto (the property TZ) so the value is stable
+-- regardless of the server's clock zone; timezone(text, timestamptz) is
+-- IMMUTABLE, which a STORED generated column requires.
+ALTER TABLE visitor_passes
+    ADD COLUMN IF NOT EXISTS start_date DATE
+    GENERATED ALWAYS AS ((starts_at AT TIME ZONE 'America/Toronto')::date) STORED;
+
+-- At most one live pass per unit per calendar day. Created defensively: if an
+-- existing database already holds same-day duplicates (allowed under the old
+-- rules), the index is skipped with a notice rather than aborting the whole
+-- schema apply — the in-transaction check in passService is the primary guard.
+DO $$
+BEGIN
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_pass_one_per_unit_per_day
+      ON visitor_passes (unit_id, start_date)
+      WHERE status = 'active' AND vacated_at IS NULL;
+EXCEPTION WHEN unique_violation THEN
+  RAISE NOTICE 'idx_pass_one_per_unit_per_day skipped: existing rows already violate one-active-pass-per-unit-per-day; resolve duplicates and re-run to enforce it at the DB level.';
+END $$;
+
+COMMIT;

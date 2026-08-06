@@ -58,7 +58,15 @@ module.exports = {
   // Number of physical visitor parking spaces. At most this many passes may be
   // "live" (occupying a spot) at any instant, building-wide.
   spotCapacity: parseInt(process.env.SPOT_CAPACITY || '5', 10),
+  // Legacy default window (hours) — retained for the legacy 'today' /
+  // 'tomorrow_noon' presets and any explicit durationHours path.
   defaultPassDurationHours: parseInt(process.env.DEFAULT_PASS_DURATION_HOURS || '24', 10),
+  // --- New duration-mode rules (all anchored in propertyTz) ------------------
+  // Short Stay: expires after this many hours OR at the cutoff hour (local),
+  // whichever is sooner. Overnight: expires at overnightEndHour local next day.
+  shortStayMaxHours: 6,
+  shortStayCutoffHour: 23, // 11 PM local
+  overnightEndHour: 8,     // 8 AM local
   // Base URL the app is reached at, used to build OAuth redirect URIs.
   oauthBaseUrl: (process.env.OAUTH_BASE_URL || `http://localhost:${process.env.PORT || '3000'}`).replace(/\/$/, ''),
   // How long a Google/Microsoft-started desk session lasts (minutes).
