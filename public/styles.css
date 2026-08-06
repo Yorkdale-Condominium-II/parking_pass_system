@@ -5,25 +5,25 @@
 * { box-sizing: border-box; }
 body { margin: 0; font-family: "Helvetica Neue", Arial, sans-serif; color: var(--ink); background: var(--bg); }
 
-header { display: flex; align-items: center; gap: 20px; background: var(--ink); color: #fff; padding: 12px 20px; }
+header { display: flex; align-items: center; gap: 20px; background: #d1d5db; color: var(--ink); padding: 12px 20px; border-bottom: 1px solid rgba(0,0,0,.12); }
 header .brand { font-weight: 800; font-size: 18px; display: flex; align-items: center; gap: 8px; }
-header .brand .logo { width: 28px; height: 28px; display: block; border-radius: 50%; }
-header .brand .brand-org { font-weight: 500; font-size: 13px; opacity: 0.7; }
+header .brand .logo { width: 30px; height: 30px; display: block; }
+header .brand .brand-org { font-weight: 500; font-size: 13px; opacity: 0.65; }
 header .brand .version {
   font-weight: 600; font-size: 11px; vertical-align: middle;
-  opacity: 0.65; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  opacity: 0.6; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   padding: 1px 6px; border: 1px solid currentColor; border-radius: 10px;
 }
 header nav { display: flex; gap: 6px; flex: 1; }
-header nav button { background: transparent; color: #cdd5df; border: 0; padding: 8px 12px; border-radius: 6px; cursor: pointer; font-size: 14px; }
-header nav button.active, header nav button:hover { background: rgba(255,255,255,.15); color: #fff; }
+header nav button { background: transparent; color: #374151; border: 0; padding: 8px 12px; border-radius: 6px; cursor: pointer; font-size: 14px; }
+header nav button.active, header nav button:hover { background: rgba(0,0,0,.10); color: var(--ink); }
 /* "System Management" grouping in the top nav. */
 header nav .nav-group {
   display: inline-flex; align-items: center; gap: 2px;
-  margin-left: 10px; padding-left: 10px; border-left: 1px solid rgba(255,255,255,.2);
+  margin-left: 10px; padding-left: 10px; border-left: 1px solid rgba(0,0,0,.18);
 }
 header nav .nav-group-label {
-  color: #8b97a6; font-size: 11px; font-weight: 700; text-transform: uppercase;
+  color: var(--muted); font-size: 11px; font-weight: 700; text-transform: uppercase;
   letter-spacing: .04em; margin-right: 4px; white-space: nowrap;
 }
 header .who { display: flex; align-items: center; gap: 10px; font-size: 14px; }
