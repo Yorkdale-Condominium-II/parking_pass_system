@@ -1331,6 +1331,39 @@ test('tag mode: returning a tag frees it and its spot', async () => {
   }
 });
 
+test('tag mode: per-tag history records each pass and its outcome, newest first', async () => {
+  config.tagMode = true;
+  await resetTags();
+  try {
+    const c = makeClient();
+    await c('POST', '/api/auth/login', { username: 'security1', password: 'changeme123' });
+    // First visitor takes tag 1, then returns it.
+    const first = await c('POST', '/api/passes', { unitNumber: '1204', visitorPlate: 'HIST1' });
+    assert.equal(first.body.tagNumber, 1);
+    await c('POST', '/api/tags/1/return', {});
+    // Second visitor takes tag 1 again and stays active.
+    const second = await c('POST', '/api/passes', { unitNumber: '1204', visitorPlate: 'HIST2' });
+    assert.equal(second.body.tagNumber, 1);
+
+    const hist = await c('GET', '/api/tags/1/history');
+    assert.equal(hist.status, 200);
+    assert.equal(hist.body.tagNumber, 1);
+    assert.equal(hist.body.history.length, 2);
+    // Newest first: the still-active HIST2, then the returned HIST1.
+    assert.equal(hist.body.history[0].visitor_plate, 'HIST2');
+    assert.equal(hist.body.history[0].status, 'active');
+    assert.equal(hist.body.history[0].vacated_at, null);
+    assert.equal(hist.body.history[1].visitor_plate, 'HIST1');
+    assert.ok(hist.body.history[1].vacated_at, 'returned pass has a vacated_at');
+
+    const missing = await c('GET', '/api/tags/99/history');
+    assert.equal(missing.status, 404);
+  } finally {
+    config.tagMode = false;
+    await resetTags();
+  }
+});
+
 test('pass delivery: email/text return 409 when the channels are unconfigured', async () => {
   const c = makeClient();
   await c('POST', '/api/auth/login', { username: 'security1', password: 'changeme123' });

@@ -855,16 +855,42 @@ async function loadTagsBoard() {
     return `<div class="result-card tag-card">
       <p>🅿️ Physical <b>Tag #${t.tag_number}</b> <span class="tag-badge ${badge}">${badge}</span></p>
       ${bound}
-      ${t.status === 'issued' ? `<div class="btn-row"><button type="button" data-tag-return="${t.tag_number}">Return tag (free spot)</button></div>` : ''}
+      <div class="btn-row">
+        ${t.status === 'issued' ? `<button type="button" data-tag-return="${t.tag_number}">Return tag (free spot)</button>` : ''}
+        <button type="button" class="secondary" data-tag-history="${t.tag_number}">History</button>
+      </div>
+      <div class="tag-history" id="tagHistory-${t.tag_number}" hidden></div>
     </div>`;
   }).join('');
 }
 $('#tagsBoard') && $('#tagsBoard').addEventListener('click', async (e) => {
-  const btn = e.target.closest('button[data-tag-return]');
-  if (!btn) return;
-  if (!confirm(`Return physical Tag #${btn.dataset.tagReturn}? This frees the tag and its spot.`)) return;
-  await api(`/tags/${btn.dataset.tagReturn}/return`, { method: 'POST' });
-  loadSpots();
+  const ret = e.target.closest('button[data-tag-return]');
+  if (ret) {
+    if (!confirm(`Return physical Tag #${ret.dataset.tagReturn}? This frees the tag and its spot.`)) return;
+    await api(`/tags/${ret.dataset.tagReturn}/return`, { method: 'POST' });
+    loadSpots();
+    return;
+  }
+  const hist = e.target.closest('button[data-tag-history]');
+  if (hist) {
+    const num = hist.dataset.tagHistory;
+    const panel = $(`#tagHistory-${num}`);
+    if (!panel) return;
+    if (!panel.hidden) { panel.hidden = true; return; }
+    panel.hidden = false;
+    panel.innerHTML = '<p class="hint">Loading…</p>';
+    let data;
+    try { data = await api(`/tags/${num}/history`); }
+    catch { panel.innerHTML = '<p class="hint">Could not load history.</p>'; return; }
+    if (!data.history.length) { panel.innerHTML = '<p class="hint">No passes have used this tag yet.</p>'; return; }
+    panel.innerHTML = `<table class="mini-table"><tr><th>Issued</th><th>Unit</th><th>Plate</th><th>Visitor</th><th>By</th><th>Outcome</th></tr>` +
+      data.history.map((p) => {
+        const outcome = p.status === 'revoked' ? 'Revoked'
+          : p.vacated_at ? 'Returned'
+          : p.status === 'active' ? 'Active' : p.status;
+        return `<tr><td>${new Date(p.issued_at).toLocaleString()}</td><td>${p.unit_number}</td><td>${p.visitor_plate}</td><td>${p.visitor_name || '—'}</td><td>${p.issuer_name || '—'}</td><td>${outcome}</td></tr>`;
+      }).join('') + `</table>`;
+  }
 });
 $('#spotsUpcoming').addEventListener('click', async (e) => {
   const btn = e.target.closest('button[data-action="cancel"]');

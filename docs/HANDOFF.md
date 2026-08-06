@@ -5,7 +5,7 @@ A continuation guide for picking this project back up in a new session.
 - **Repo:** `Yorkdale-Condominium-II/parking_pass_system`
 - **Working branch:** `claude/condo-property-management-8f0seo`
 - **Latest commit at handoff:** `8d324ca`
-- **Tests:** `npm test` → 50 integration cases, all passing (needs a Postgres test DB).
+- **Tests:** `npm test` → 51 integration cases, all passing (needs a Postgres test DB).
 
 ---
 
@@ -15,7 +15,7 @@ A continuation guide for picking this project back up in a new session.
 it, `GET /api/settings` returns it (public), and the SPA shows it as a `vX.Y.Z`
 badge in the top-bar header and in the browser tab title. **Bump `package.json`
 with every committed change** so the running build is identifiable at a glance
-(semver: patch for fixes, minor for features). Current: **1.20.0**.
+(semver: patch for fixes, minor for features). Current: **1.21.0**.
 
 ---
 
@@ -39,7 +39,11 @@ is the only behavioural difference.
   cap** — a 6th concurrent car returns `no_tags_available` (409), even with a
   spot override. Vacate/revoke/return frees the tag.
 - **Tags board** on the Spots page (`GET /api/tags`) with a per-tag **Return**
-  button (`POST /api/tags/:number/return`) that frees the tag *and* its spot.
+  button (`POST /api/tags/:number/return`) that frees the tag *and* its spot,
+  and a per-tag **History** button (`GET /api/tags/:number/history`) showing
+  every pass that tag has carried — visitor, unit, plate, issuer, and outcome
+  (Active / Returned / Revoked), newest first. Derived from `visitor_passes`
+  (passes retain `tag_id` after vacate/revoke), so no separate log table.
 - **Email / Text the printable QR pass** from the issue screen
   (`POST /api/passes/:id/email` and `/text`). Email uses the existing mailer;
   texting is **Twilio** plumbing (`src/services/smsSender.js`) that stays inert
@@ -176,7 +180,7 @@ Seeded demo logins (dev only): `security1` / `manager1`, pw
 npm install
 # point at a THROWAWAY test DB (the suite truncates tables):
 export TEST_DATABASE_URL='postgres://.../parking_pass_test'
-npm test          # expect 50 passing
+npm test          # expect 51 passing
 ```
 The schema is one idempotent file (`db/schema.sql`) with additive v2–v14
 migration blocks; `npm run migrate` re-applies safely. The tag tests flip
@@ -198,7 +202,7 @@ src/routes/              auth, sso, meta, settings, passes, verify, admin, board
 public/                  index.html + app.js (SPA), desk.html/js, resident.html/js, styles.css
 db/schema.sql            schema + v2..v14 idempotent migrations (v14 = parking_tags)
 start-tags.bat/stop-tags.bat  launch/stop the TAG_MODE edition on port 3100
-test/integration.test.js 50 end-to-end cases (node:test); last 4 are tag/delivery
+test/integration.test.js 51 end-to-end cases (node:test); last 4 are tag/delivery
 ```
 
 ## 6. Deferred ideas / possible next steps
