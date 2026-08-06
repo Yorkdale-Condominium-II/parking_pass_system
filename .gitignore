@@ -1,5 +1,12 @@
 node_modules/
 .env
+.env.*
+!.env.example
+server.log
+server-tags.log
+server.err.log
+server-tags.err.log
+*.err.log
 *.log
 npm-debug.log*
 coverage/

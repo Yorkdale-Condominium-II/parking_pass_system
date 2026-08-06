@@ -1,0 +1,28 @@
+#!/bin/sh
+# ---------------------------------------------------------------------------
+#  Pre-commit guard: refuse to commit a real .env (or any .env.* variant),
+#  server logs, or *.err.log files. Secrets and operational logs must never
+#  enter version control. `.env.example` is explicitly allowed.
+#
+#  Enable this hook once per clone with:
+#     git config core.hooksPath .githooks
+# ---------------------------------------------------------------------------
+set -e
+
+staged=$(git diff --cached --name-only --diff-filter=ACM)
+
+blocked=$(printf '%s\n' "$staged" | grep -E '(^|/)\.env($|\.)' | grep -v -E '(^|/)\.env\.example$' || true)
+logs=$(printf '%s\n' "$staged" | grep -E '\.(err\.)?log$|(^|/)server(-tags)?\.log$' || true)
+
+if [ -n "$blocked" ] || [ -n "$logs" ]; then
+  echo "✖ pre-commit: refusing to commit files that must stay out of version control:"
+  [ -n "$blocked" ] && printf '  (secret)  %s\n' $blocked
+  [ -n "$logs" ]    && printf '  (log)     %s\n' $logs
+  echo ""
+  echo "Remove them from the index and try again, e.g.:"
+  echo "    git restore --staged <file>"
+  echo "(These are ignored by .gitignore; this hook is a second line of defence.)"
+  exit 1
+fi
+
+exit 0
