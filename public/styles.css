@@ -3,7 +3,20 @@
   --accent: #1d4ed8; --danger: #b3261e; --ok: #15803d; --warn: #b45309;
 }
 * { box-sizing: border-box; }
-body { margin: 0; font-family: "Helvetica Neue", Arial, sans-serif; color: var(--ink); background: var(--bg); }
+body {
+  margin: 0; font-family: "Helvetica Neue", Arial, sans-serif; color: var(--ink);
+  /* Per-section accent + tint (defaults; overridden by body[data-section]). */
+  --accent-c: #1d4ed8; --accent-bg: var(--bg);
+  background: var(--accent-bg);
+  transition: background-color .2s ease;
+}
+/* Each nav page gets a distinct accent colour and a subtle background tint. */
+body[data-section="issue"]    { --accent-c: #15803d; --accent-bg: #f0f6f2; }  /* green  */
+body[data-section="lookup"]   { --accent-c: #1d4ed8; --accent-bg: #eef2fb; }  /* blue   */
+body[data-section="spots"]    { --accent-c: #0f766e; --accent-bg: #ecf5f4; }  /* teal   */
+body[data-section="requests"] { --accent-c: #b45309; --accent-bg: #faf3ea; }  /* amber  */
+body[data-section="admin"]    { --accent-c: #6d28d9; --accent-bg: #f3effc; }  /* violet */
+body[data-section="account"]  { --accent-c: #475569; --accent-bg: #f0f2f5; }  /* slate  */
 
 header { display: flex; align-items: center; gap: 20px; background: #d1d5db; color: var(--ink); padding: 12px 20px; border-bottom: 1px solid rgba(0,0,0,.12); }
 header .brand { font-weight: 800; font-size: 18px; display: flex; align-items: center; gap: 8px; }
@@ -16,7 +29,8 @@ header .brand .version {
 }
 header nav { display: flex; gap: 6px; flex: 1; }
 header nav button { background: transparent; color: #374151; border: 0; padding: 8px 12px; border-radius: 6px; cursor: pointer; font-size: 14px; }
-header nav button.active, header nav button:hover { background: rgba(0,0,0,.10); color: var(--ink); }
+header nav button:hover { background: rgba(0,0,0,.10); color: var(--ink); }
+header nav button.active { background: var(--accent-c); color: #fff; }
 /* "System Management" grouping in the top nav. */
 header nav .nav-group {
   display: inline-flex; align-items: center; gap: 2px;
@@ -30,11 +44,11 @@ header .who { display: flex; align-items: center; gap: 10px; font-size: 14px; }
 header .who button { background: #374151; color: #fff; border: 0; padding: 6px 12px; border-radius: 6px; cursor: pointer; }
 
 main { max-width: 960px; margin: 0 auto; padding: 24px 16px; }
-.view h1 { font-size: 24px; margin-top: 0; }
+.view h1 { font-size: 24px; margin-top: 0; color: var(--accent-c); border-left: 5px solid var(--accent-c); padding-left: 12px; }
 /* Capitalize every word of in-page section headers (the version badge stays as-is). */
 main h1, main h2, main h3 { text-transform: capitalize; }
 main h1 .version, main h2 .version, main h3 .version { text-transform: none; }
-.card { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 20px; margin-bottom: 16px; }
+.card { background: #fff; border: 1px solid var(--line); border-left: 4px solid var(--accent-c); border-radius: 10px; padding: 20px; margin-bottom: 16px; }
 /* Collapsible admin sections (<details class="card sect">). */
 details.sect > summary {
   cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px;

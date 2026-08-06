@@ -89,6 +89,9 @@ function showView(key) {
     if (VIEW_LOADERS[v]) VIEW_LOADERS[v]();
   });
   document.querySelectorAll('#nav button').forEach((b) => b.classList.toggle('active', b.dataset.page === key));
+  // Per-section theming (accent colour + background tint) so it's obvious which
+  // section you're in. Styled via body[data-section] in styles.css.
+  if (PAGES[key]) document.body.dataset.section = key;
   if (!views.includes('verify')) stopCamera();
 }
 
