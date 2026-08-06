@@ -133,6 +133,7 @@ router.post('/', requireAuth, requireRole('security', 'management'), async (req,
       usedSpotOverride: result.usedSpotOverride,
       quota: result.quota,
       spots: result.spots,
+      tagNumber: result.tagNumber,
       printUrl: `/api/passes/${result.pass.id}/print`,
     });
   } catch (err) {
@@ -140,6 +141,7 @@ router.post('/', requireAuth, requireRole('security', 'management'), async (req,
       unit_not_found: 404,
       quota_exceeded: 409,
       spot_full: 409,
+      no_tags_available: 409,
       override_code_invalid: 403,
       override_reason_required: 400,
       invalid_plate: 400,
@@ -181,6 +183,70 @@ router.get('/:id/print', requireAuth, requireRole('security', 'management'), asy
   const shortCode = pass.short_code || barcode.shortCodeForPass(pass.id);
 
   res.type('html').send(renderPassSheet({ pass, token, qrDataUrl, shortCode }));
+});
+
+// Fetch a pass with the fields needed to (re)build its token/short code/PDF.
+async function loadPassForDelivery(id) {
+  const r = await db.query(
+    `SELECT vp.*, u.unit_number, usr.full_name AS issuer_name, usr.role AS issuer_role
+       FROM visitor_passes vp
+       JOIN units u ON u.id = vp.unit_id
+       JOIN users usr ON usr.id = vp.issued_by
+      WHERE vp.id = $1`,
+    [id]
+  );
+  return r.rows[0] || null;
+}
+
+// ---------------------------------------------------------------------------
+//  Email the printable pass (PDF) to a visitor / unit owner.
+// ---------------------------------------------------------------------------
+router.post('/:id/email', requireAuth, requireRole('security', 'management'), async (req, res) => {
+  const to = String((req.body || {}).to || '').trim();
+  if (!to) return res.status(400).json({ error: 'email_required' });
+  const mailer = require('./../services/mailer');
+  if (!mailer.isConfigured()) return res.status(409).json({ error: 'email_not_configured' });
+  const pass = await loadPassForDelivery(req.params.id);
+  if (!pass) return res.status(404).json({ error: 'pass_not_found' });
+
+  const barcode = require('./../crypto/barcode');
+  const token = barcode.signPass({
+    passId: pass.id, unitNumber: pass.unit_number, visitorPlate: pass.visitor_plate,
+    issuedAt: pass.issued_at, expiresAt: pass.expires_at,
+  });
+  const shortCode = pass.short_code || barcode.shortCodeForPass(pass.id);
+  const { buildPassPdf } = require('./../services/passPdf');
+  const pdf = await buildPassPdf({ pass, token, shortCode, issuerName: pass.issuer_name, issuerRole: pass.issuer_role });
+  const result = await mailer.sendMail({
+    to,
+    subject: `Your visitor parking pass — unit ${pass.unit_number}`,
+    text: `Your visitor parking pass is attached.\nUnit ${pass.unit_number} · plate ${pass.visitor_plate}`
+      + `\nShort code: ${shortCode}\nValid until ${new Date(pass.expires_at).toLocaleString()}.`,
+    attachments: [{ filename: `parking-pass-${shortCode}.pdf`, content: Buffer.from(pdf), contentType: 'application/pdf' }],
+  });
+  if (!result.sent) return res.status(502).json({ error: 'email_send_failed', message: result.error });
+  res.json({ ok: true, emailed: to });
+});
+
+// ---------------------------------------------------------------------------
+//  Text (SMS) the visitor/owner a link to the printable pass.
+// ---------------------------------------------------------------------------
+router.post('/:id/text', requireAuth, requireRole('security', 'management'), async (req, res) => {
+  const to = String((req.body || {}).to || '').trim();
+  if (!to) return res.status(400).json({ error: 'phone_required' });
+  const sms = require('./../services/smsSender');
+  if (!sms.isConfigured()) return res.status(409).json({ error: 'sms_not_configured' });
+  const pass = await loadPassForDelivery(req.params.id);
+  if (!pass) return res.status(404).json({ error: 'pass_not_found' });
+  const config = require('./../config');
+  const link = `${config.oauthBaseUrl}/api/passes/${pass.id}/print`;
+  const result = await sms.send({
+    to,
+    body: `Yorkdale visitor parking pass (unit ${pass.unit_number}, plate ${pass.visitor_plate}). `
+      + `Show this at the gate: ${link}`,
+  });
+  if (!result.sent) return res.status(502).json({ error: 'sms_send_failed', message: result.error });
+  res.json({ ok: true, texted: to });
 });
 
 // ---------------------------------------------------------------------------

@@ -1254,3 +1254,92 @@ test('password reset is refused for a disabled account', async () => {
   // Re-activate so we don't leave the shared DB in a surprising state.
   await db.query(`UPDATE users SET is_active = TRUE WHERE username = 'security1'`);
 });
+
+// ---------------------------------------------------------------------------
+//  Physical-tag edition (TAG_MODE). tagMode is read at call time from the
+//  shared config object, so we flip it on for these tests and restore after.
+//  parking_tags is reset around each so the standard-mode tests are unaffected.
+// ---------------------------------------------------------------------------
+const config = require('../src/config');
+
+async function resetTags() {
+  await db.query(`UPDATE parking_tags SET status = 'available'`);
+}
+
+test('tag mode: issuing a pass assigns the lowest available numbered tag', async () => {
+  config.tagMode = true;
+  await resetTags();
+  try {
+    const c = makeClient();
+    await c('POST', '/api/auth/login', { username: 'security1', password: 'changeme123' });
+    const a = await c('POST', '/api/passes', { unitNumber: '1204', visitorPlate: 'TAG1' });
+    assert.equal(a.status, 201, JSON.stringify(a.body));
+    assert.equal(a.body.tagNumber, 1);
+    const b = await c('POST', '/api/passes', { unitNumber: '1204', visitorPlate: 'TAG2' });
+    assert.equal(b.body.tagNumber, 2);
+    // The tags board reflects the assignments.
+    const board = await c('GET', '/api/tags');
+    assert.equal(board.status, 200);
+    const t1 = board.body.find((t) => t.tag_number === 1);
+    assert.equal(t1.status, 'issued');
+    assert.equal(t1.visitor_plate, 'TAG1');
+  } finally {
+    config.tagMode = false;
+    await resetTags();
+  }
+});
+
+test('tag mode: the pool is a hard cap — the 6th concurrent issue is refused', async () => {
+  config.tagMode = true;
+  await resetTags();
+  try {
+    const c = makeClient();
+    await c('POST', '/api/auth/login', { username: 'manager1', password: 'changeme123' });
+    for (let i = 1; i <= 5; i++) {
+      const r = await c('POST', '/api/passes', { unitNumber: 'C-101', visitorPlate: 'CAP' + i });
+      assert.equal(r.status, 201, `#${i}: ${JSON.stringify(r.body)}`);
+    }
+    // Spot-override so we bypass the spot cap and prove the TAG pool is the limit.
+    const sixth = await c('POST', '/api/passes', { unitNumber: 'C-101', visitorPlate: 'CAP6', spotOverride: true });
+    assert.equal(sixth.status, 409);
+    assert.equal(sixth.body.error, 'no_tags_available');
+  } finally {
+    config.tagMode = false;
+    await resetTags();
+  }
+});
+
+test('tag mode: returning a tag frees it and its spot', async () => {
+  config.tagMode = true;
+  await resetTags();
+  try {
+    const c = makeClient();
+    await c('POST', '/api/auth/login', { username: 'security1', password: 'changeme123' });
+    const iss = await c('POST', '/api/passes', { unitNumber: '1204', visitorPlate: 'RET1' });
+    assert.equal(iss.body.tagNumber, 1);
+    const ret = await c('POST', '/api/tags/1/return', {});
+    assert.equal(ret.status, 200);
+    // Tag 1 is available again and the pass is vacated.
+    const board = await c('GET', '/api/tags');
+    assert.equal(board.body.find((t) => t.tag_number === 1).status, 'available');
+    // Re-issuing now hands out tag 1 again (lowest available).
+    const again = await c('POST', '/api/passes', { unitNumber: '1204', visitorPlate: 'RET2' });
+    assert.equal(again.body.tagNumber, 1);
+  } finally {
+    config.tagMode = false;
+    await resetTags();
+  }
+});
+
+test('pass delivery: email/text return 409 when the channels are unconfigured', async () => {
+  const c = makeClient();
+  await c('POST', '/api/auth/login', { username: 'security1', password: 'changeme123' });
+  const iss = await c('POST', '/api/passes', { unitNumber: '1204', visitorPlate: 'DLV1' });
+  assert.equal(iss.status, 201);
+  const email = await c('POST', `/api/passes/${iss.body.passId}/email`, { to: 'guest@example.com' });
+  assert.equal(email.status, 409);
+  assert.equal(email.body.error, 'email_not_configured');
+  const text = await c('POST', `/api/passes/${iss.body.passId}/text`, { to: '416-555-0100' });
+  assert.equal(text.status, 409);
+  assert.equal(text.body.error, 'sms_not_configured');
+});

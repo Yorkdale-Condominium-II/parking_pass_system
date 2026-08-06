@@ -51,12 +51,15 @@ let unitIndex = {};   // unit_number -> {kind, business_name}
 let regionData = null;
 let orgName = 'Yorkdale Condominium II';
 let appVersion = '';
+let tagMode = false;
 
 async function loadSettings() {
   try {
     const s = await api('/settings');
     orgName = s.orgName || orgName;
     appVersion = s.version || appVersion;
+    tagMode = Boolean(s.tagMode);
+    document.body.classList.toggle('tag-mode', tagMode);
   } catch {}
   applyOrgName();
   applyVersion();
@@ -335,12 +338,18 @@ $('#issueForm').onsubmit = async (e) => {
     $('#issueResult').innerHTML = `
       <div class="result-card">
         <h3>Pass issued ${r.usedOverride ? '(quota override)' : ''}${r.usedSpotOverride ? ' (spot override)' : ''}</h3>
+        ${r.tagNumber != null ? `<p style="font-size:18px">🅿️ Give the visitor physical <b>Tag #${r.tagNumber}</b></p>` : ''}
         <p>Unit <b>${r.unitNumber}</b> (${r.kind}) · Plate <b>${r.visitorPlate}</b> · ${r.visitorName || 'visitor'}</p>
         ${new Date(r.startsAt) - new Date(r.issuedAt) > 60000 ? `<p>Valid from: <b>${new Date(r.startsAt).toLocaleString()}</b></p>` : ''}
         <p>Expires: <b>${new Date(r.expiresAt).toLocaleString()}</b></p>
         <p>Verification code: <b style="font-family:monospace;font-size:18px">${r.shortCode}</b></p>
         <p>${q.unlimited ? 'Commercial: unlimited' : `Quota this year: ${q.used}/${q.limit} used`} · Spaces used: ${r.spots ? r.spots.peak + '/' + r.spots.capacity + ' at peak' : ''}</p>
-        <a href="${r.printUrl}" target="_blank"><button type="button">🖨 Open printable pass</button></a>
+        <div class="btn-row">
+          <a href="${r.printUrl}" target="_blank"><button type="button">🖨 Open printable pass</button></a>
+          <button type="button" data-deliver="email" data-id="${r.passId}">✉️ Email pass</button>
+          <button type="button" data-deliver="text" data-id="${r.passId}">💬 Text pass</button>
+        </div>
+        <p class="msg" id="deliverMsg"></p>
       </div>`;
     e.target.reset();
     $('#overrideFields').hidden = true;
@@ -403,6 +412,28 @@ $('#scanStart').onclick = async () => {
 $('#scanStop').onclick = stopCamera;
 
 // --- Verify: short code + token ---
+// Email / text the pass from the issue result.
+$('#issueResult').addEventListener('click', async (e) => {
+  const btn = e.target.closest('button[data-deliver]');
+  if (!btn) return;
+  const kind = btn.dataset.deliver; // 'email' | 'text'
+  const to = prompt(kind === 'email'
+    ? 'Email address to send the pass to:'
+    : 'Mobile number to text the pass to (e.g. +14165551234):');
+  if (!to) return;
+  const msg = $('#deliverMsg'); if (msg) msg.textContent = 'Sending…';
+  try {
+    await api(`/passes/${btn.dataset.id}/${kind}`, { method: 'POST', body: { to } });
+    if (msg) msg.textContent = kind === 'email' ? `Emailed to ${to}.` : `Texted to ${to}.`;
+  } catch (err) {
+    const map = {
+      email_not_configured: 'Email isn’t configured on this server yet.',
+      sms_not_configured: 'Texting isn’t configured yet (needs an SMS provider — see .env.example).',
+    };
+    if (msg) msg.textContent = map[err.data?.error] || err.data?.message || err.message;
+  }
+});
+
 $('#shortForm').onsubmit = (e) => { e.preventDefault(); doVerify({ shortCode: new FormData(e.target).get('shortCode') }); };
 $('#verifyForm').onsubmit = (e) => { e.preventDefault(); doVerify({ token: new FormData(e.target).get('token') }); };
 
@@ -807,7 +838,34 @@ async function loadSpots() {
     </div>`).join('') : '<p>No spaces occupied right now.</p>';
   $('#spotsUpcoming').innerHTML = s.upcoming.length ? `<table><tr><th>Starts</th><th>Unit</th><th>Plate</th><th>Until</th><th>Authorized by</th><th></th></tr>` +
     s.upcoming.map((p) => `<tr><td>${new Date(p.starts_at).toLocaleString()}</td><td>${p.unit_number}</td><td>${p.visitor_plate}</td><td>${new Date(p.expires_at).toLocaleString()}</td><td>${p.authorized_by || '—'}</td><td><button type="button" class="danger" data-action="cancel" data-id="${p.id}">Cancel</button></td></tr>`).join('') + `</table>` : '<p>Nothing scheduled.</p>';
+  if (tagMode) await loadTagsBoard();
 }
+async function loadTagsBoard() {
+  const wrap = $('#tagsBoardWrap');
+  if (wrap) wrap.hidden = false;
+  const board = $('#tagsBoard');
+  if (!board) return;
+  let tags;
+  try { tags = await api('/tags'); } catch { board.innerHTML = '<p>Could not load tags.</p>'; return; }
+  board.innerHTML = tags.map((t) => {
+    const badge = t.status === 'issued' ? 'issued' : (t.status === 'lost' ? 'lost' : 'available');
+    const bound = t.unit_number
+      ? `<p class="hint">Unit <b>${t.unit_number}</b> · Plate <b>${t.visitor_plate || '—'}</b>${t.visitor_name ? ' · ' + t.visitor_name : ''}</p>`
+      : '<p class="hint">Not assigned — ready to hand out.</p>';
+    return `<div class="result-card tag-card">
+      <p>🅿️ Physical <b>Tag #${t.tag_number}</b> <span class="tag-badge ${badge}">${badge}</span></p>
+      ${bound}
+      ${t.status === 'issued' ? `<div class="btn-row"><button type="button" data-tag-return="${t.tag_number}">Return tag (free spot)</button></div>` : ''}
+    </div>`;
+  }).join('');
+}
+$('#tagsBoard') && $('#tagsBoard').addEventListener('click', async (e) => {
+  const btn = e.target.closest('button[data-tag-return]');
+  if (!btn) return;
+  if (!confirm(`Return physical Tag #${btn.dataset.tagReturn}? This frees the tag and its spot.`)) return;
+  await api(`/tags/${btn.dataset.tagReturn}/return`, { method: 'POST' });
+  loadSpots();
+});
 $('#spotsUpcoming').addEventListener('click', async (e) => {
   const btn = e.target.closest('button[data-action="cancel"]');
   if (!btn) return;

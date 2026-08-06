@@ -19,6 +19,11 @@ function required(name) {
 
 module.exports = {
   propertyTz: PROPERTY_TZ,
+  // Physical-tag mode: the concierge assigns a numbered hard-plastic tag from a
+  // finite pool (the pool size is the spot capacity). Off by default so the
+  // standard printable-pass system is unchanged; the separate start-tags.bat
+  // launches an isolated instance with TAG_MODE=true.
+  tagMode: process.env.TAG_MODE === 'true',
   // Send the session cookie only over HTTPS. Defaults on in production; set
   // COOKIE_SECURE=true when serving over TLS (directly or behind a proxy).
   cookieSecure: process.env.COOKIE_SECURE
@@ -29,7 +34,12 @@ module.exports = {
   // App version, surfaced in the UI header/tab. Single source of truth is
   // package.json — bump it there with each committed change.
   version: require('./../package.json').version,
-  databaseUrl: process.env.DATABASE_URL || null,
+  // In tag mode, use a separate database if one is provided (TAGS_DATABASE_URL)
+  // so the demo instance is fully isolated from the standard system; otherwise
+  // fall back to the primary DATABASE_URL.
+  databaseUrl: (process.env.TAG_MODE === 'true' && process.env.TAGS_DATABASE_URL)
+    ? process.env.TAGS_DATABASE_URL
+    : (process.env.DATABASE_URL || null),
   jwtSecret: required('JWT_SECRET'),
   barcodeSecret: required('BARCODE_SECRET'),
   // Secret used to derive the rotating weekly override code. Falls back to the

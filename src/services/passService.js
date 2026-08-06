@@ -11,6 +11,12 @@ function normalizePlate(plate) {
   return String(plate || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 }
 
+// Return a physical tag to the pool (no-op when the pass had none).
+async function freeTag(client, tagId) {
+  if (!tagId) return;
+  await client.query(`UPDATE parking_tags SET status = 'available' WHERE id = $1`, [tagId]);
+}
+
 // Build the Google-Sheets row fields from a visitor_passes row joined with its
 // unit (unit_number/kind) and issuer (issuer_name). Used for revoked/vacated
 // events so their rows carry the same detail as an 'issued' row.
@@ -184,6 +190,23 @@ async function issuePass(opts) {
       usedSpotOverride = true; // Security confirmed a spot is available
     }
 
+    // TAG MODE: claim an available numbered tag from the finite pool. SKIP
+    // LOCKED lets concurrent issues grab different tags without blocking; when
+    // none are free the physical pool is the hard cap.
+    let tag = null;
+    if (config.tagMode) {
+      const t = await client.query(
+        `SELECT id, tag_number FROM parking_tags WHERE status = 'available'
+          ORDER BY tag_number FOR UPDATE SKIP LOCKED LIMIT 1`
+      );
+      if (t.rowCount === 0) {
+        const e = new Error('All physical parking tags are currently out.');
+        e.code = 'no_tags_available';
+        throw e;
+      }
+      tag = t.rows[0];
+    }
+
     const first = (opts.visitorFirstName || '').trim();
     const last = (opts.visitorLastName || '').trim();
     const fullName = [first, last].filter(Boolean).join(' ') || null;
@@ -195,13 +218,16 @@ async function issuePass(opts) {
       `INSERT INTO visitor_passes
          (unit_id, visitor_plate, visitor_name, visitor_first_name, visitor_last_name,
           visitor_region, issued_by, issued_at, starts_at, expires_at, calendar_year,
-          status, was_override, barcode_sig)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'active',$12,'')
+          status, was_override, barcode_sig, tag_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'active',$12,'',$13)
        RETURNING *`,
       [unit.id, plate, fullName, first || null, last || null, regionStored,
-       opts.issuer.id, now, startsAt, expiresAt, year, usedOverride]
+       opts.issuer.id, now, startsAt, expiresAt, year, usedOverride, tag ? tag.id : null]
     );
     const pass = insertRes.rows[0];
+    if (tag) {
+      await client.query(`UPDATE parking_tags SET status = 'issued' WHERE id = $1`, [tag.id]);
+    }
 
     const token = barcode.signPass({
       passId: pass.id,
@@ -234,10 +260,12 @@ async function issuePass(opts) {
       spots,
       usedOverride,
       usedSpotOverride,
+      tagNumber: tag ? tag.tag_number : null,
     };
   });
   // Mirror to Google Sheets (best-effort, off the critical path).
   sheetsLog.logEvent('issued', {
+    tag: result.tagNumber || '',
     unit: result.pass.unit_number,
     kind: result.pass.kind,
     plate: result.pass.visitor_plate,
@@ -309,6 +337,7 @@ async function vacatePass(passId, actorId) {
       throw e;
     }
     await audit(client, { passId, action: 'vacated', actorId, detail: {} });
+    await freeTag(client, res.rows[0].tag_id);
     return res.rows[0];
   });
   sheetsLog.logEvent('vacated', passLogFields(row)).catch(() => {});
@@ -382,6 +411,7 @@ async function revokePass(passId, actorId) {
       throw e;
     }
     await audit(client, { passId, action: 'revoked', actorId, detail: {} });
+    await freeTag(client, res.rows[0].tag_id);
     return res.rows[0];
   });
   sheetsLog.logEvent('revoked', passLogFields(row)).catch(() => {});

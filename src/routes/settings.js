@@ -13,6 +13,7 @@ router.get('/', async (req, res) => {
   res.json({
     orgName: r.rows[0]?.value || 'Yorkdale Condominium II',
     version: config.version,
+    tagMode: config.tagMode,
   });
 });
 

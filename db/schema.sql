@@ -389,3 +389,24 @@ ALTER TABLE units ADD COLUMN IF NOT EXISTS owner_name  TEXT;
 ALTER TABLE units ADD COLUMN IF NOT EXISTS owner_phone TEXT;
 ALTER TABLE units ADD COLUMN IF NOT EXISTS owner_email TEXT;
 COMMIT;
+
+-- ============================================================================
+--  v14 migration — physical parking tags (numbered hard-plastic hang tags).
+--  Used only in TAG_MODE: the concierge hands a numbered tag to the visitor and
+--  the system binds it to the pass; the finite tag pool IS the spot capacity.
+--  Tags are reused: 'available' -> 'issued' -> back to 'available' on return.
+--  Seeds tag numbers 1..SPOT_CAPACITY (5). Additive + harmless when TAG_MODE off.
+-- ============================================================================
+BEGIN;
+CREATE TABLE IF NOT EXISTS parking_tags (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tag_number  INTEGER     NOT NULL UNIQUE,
+    status      TEXT        NOT NULL DEFAULT 'available',  -- available | issued | lost
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+INSERT INTO parking_tags (tag_number)
+     SELECT g FROM generate_series(1, 5) g
+  ON CONFLICT (tag_number) DO NOTHING;
+ALTER TABLE visitor_passes ADD COLUMN IF NOT EXISTS tag_id UUID REFERENCES parking_tags(id);
+CREATE INDEX IF NOT EXISTS idx_pass_tag ON visitor_passes(tag_id);
+COMMIT;
