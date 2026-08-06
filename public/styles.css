@@ -115,6 +115,9 @@ details.card summary + form { margin-top: 12px; }
 .tag-badge.issued { background: #fee2e2; color: #991b1b; }
 .tag-badge.lost { background: #e5e7eb; color: #374151; }
 body.tag-mode #brandName::after { content: ' · Tag edition'; font-weight: 400; opacity: 0.7; font-size: 0.7em; }
+.next-tag-banner { margin: 0 0 12px; padding: 10px 14px; border-radius: 8px; font-size: 15px;
+  background: #dbeafe; color: #1e3a8a; border: 1px solid #bfdbfe; }
+.next-tag-banner.none { background: #fee2e2; color: #991b1b; border-color: #fecaca; }
 .tag-history { margin-top: 8px; }
 .mini-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .mini-table th, .mini-table td { text-align: left; padding: 4px 6px; border-bottom: 1px solid #e5e7eb; }

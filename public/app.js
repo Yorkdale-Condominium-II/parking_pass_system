@@ -41,7 +41,7 @@ function canSeeView(v) { return v === 'board' ? !!currentUser && currentUser.rol
 const VIEW_LOADERS = {
   board: () => loadBoard(),
   admin: () => { loadAudit(); loadAuthAudit(); loadOverrideCode(); loadExportDatasets(); loadYearEnd(); loadUsers(); loadUnitsList(); $('#orgNameInput').value = orgName; },
-  issue: () => { loadUnits(); loadSpotsBadge(); },
+  issue: () => { loadUnits(); loadSpotsBadge(); loadNextTag(); },
   requests: () => loadRequests(),
   spots: () => loadSpots(),
   account: () => loadAccount(),
@@ -356,6 +356,8 @@ $('#issueForm').onsubmit = async (e) => {
     $('#durationPreset').value = 'today';
     document.querySelectorAll('#durationRow .dur').forEach((x, i) => x.classList.toggle('active', i === 0));
     populateRegions();
+    loadNextTag();   // the tag just claimed is gone; show the next one
+    loadSpotsBadge();
   } catch (err) {
     if (err.data?.error === 'quota_exceeded') {
       const qd = err.data.quota || {};
@@ -917,6 +919,25 @@ async function loadSpotsBadge() {
     const btn = document.querySelector('#nav button[data-page="spots"]');
     if (btn) btn.textContent = `${PAGES.spots.label} (${s.available}/${s.capacity})`;
   } catch {}
+}
+// TAG MODE: show which numbered hard-plastic tag the next issued pass will
+// claim (the lowest available), so the concierge knows before clicking Issue.
+async function loadNextTag() {
+  const banner = $('#nextTagBanner');
+  if (!banner) return;
+  if (!tagMode) { banner.hidden = true; return; }
+  banner.hidden = false;
+  let tags;
+  try { tags = await api('/tags'); }
+  catch { banner.hidden = true; return; }
+  const free = tags.filter((t) => t.status === 'available').sort((a, b) => a.tag_number - b.tag_number);
+  if (free.length === 0) {
+    banner.className = 'next-tag-banner none';
+    banner.innerHTML = `🅿️ <b>No tags available</b> — all physical tags are out. Return one before issuing.`;
+  } else {
+    banner.className = 'next-tag-banner';
+    banner.innerHTML = `🅿️ Next tag to hand out: <b>Tag #${free[0].tag_number}</b> · ${free.length} of ${tags.length} available`;
+  }
 }
 
 // --- Export (Management) ---

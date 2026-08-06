@@ -15,7 +15,7 @@ A continuation guide for picking this project back up in a new session.
 it, `GET /api/settings` returns it (public), and the SPA shows it as a `vX.Y.Z`
 badge in the top-bar header and in the browser tab title. **Bump `package.json`
 with every committed change** so the running build is identifiable at a glance
-(semver: patch for fixes, minor for features). Current: **1.21.0**.
+(semver: patch for fixes, minor for features). Current: **1.22.0**.
 
 ---
 
@@ -35,9 +35,11 @@ is the only behavioural difference.
 **What TAG_MODE changes (all gated behind the flag — off = standard system):**
 - Schema **v14**: `parking_tags` pool (5 tags) + `visitor_passes.tag_id`.
 - Issuing a pass claims the **lowest available** tag (`FOR UPDATE SKIP LOCKED`);
-  the issue screen says "Give the visitor **Tag #N**". The pool is a **hard
-  cap** — a 6th concurrent car returns `no_tags_available` (409), even with a
-  spot override. Vacate/revoke/return frees the tag.
+  the issue screen says "Give the visitor **Tag #N**". A **"Next tag: #N"**
+  banner on the Issue form (fed by `GET /api/tags`) previews which tag the next
+  pass will claim, or warns when none are free; it refreshes after each issue.
+  The pool is a **hard cap** — a 6th concurrent car returns `no_tags_available`
+  (409), even with a spot override. Vacate/revoke/return frees the tag.
 - **Tags board** on the Spots page (`GET /api/tags`) with a per-tag **Return**
   button (`POST /api/tags/:number/return`) that frees the tag *and* its spot,
   and a per-tag **History** button (`GET /api/tags/:number/history`) showing
