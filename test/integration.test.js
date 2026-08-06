@@ -1272,10 +1272,10 @@ test('tag mode: issuing a pass assigns the lowest available numbered tag', async
   try {
     const c = makeClient();
     await c('POST', '/api/auth/login', { username: 'security1', password: 'changeme123' });
-    const a = await c('POST', '/api/passes', { unitNumber: '1204', visitorPlate: 'TAG1' });
+    const a = await c('POST', '/api/passes', { unitNumber: '1204', visitorPlate: 'TAG1', printInstead: true });
     assert.equal(a.status, 201, JSON.stringify(a.body));
     assert.equal(a.body.tagNumber, 1);
-    const b = await c('POST', '/api/passes', { unitNumber: '1204', visitorPlate: 'TAG2' });
+    const b = await c('POST', '/api/passes', { unitNumber: '1204', visitorPlate: 'TAG2', printInstead: true });
     assert.equal(b.body.tagNumber, 2);
     // The tags board reflects the assignments.
     const board = await c('GET', '/api/tags');
@@ -1296,11 +1296,11 @@ test('tag mode: the pool is a hard cap — the 6th concurrent issue is refused',
     const c = makeClient();
     await c('POST', '/api/auth/login', { username: 'manager1', password: 'changeme123' });
     for (let i = 1; i <= 5; i++) {
-      const r = await c('POST', '/api/passes', { unitNumber: 'C-101', visitorPlate: 'CAP' + i });
+      const r = await c('POST', '/api/passes', { unitNumber: 'C-101', visitorPlate: 'CAP' + i, printInstead: true });
       assert.equal(r.status, 201, `#${i}: ${JSON.stringify(r.body)}`);
     }
     // Spot-override so we bypass the spot cap and prove the TAG pool is the limit.
-    const sixth = await c('POST', '/api/passes', { unitNumber: 'C-101', visitorPlate: 'CAP6', spotOverride: true });
+    const sixth = await c('POST', '/api/passes', { unitNumber: 'C-101', visitorPlate: 'CAP6', spotOverride: true, printInstead: true });
     assert.equal(sixth.status, 409);
     assert.equal(sixth.body.error, 'no_tags_available');
   } finally {
@@ -1315,7 +1315,7 @@ test('tag mode: returning a tag frees it and its spot', async () => {
   try {
     const c = makeClient();
     await c('POST', '/api/auth/login', { username: 'security1', password: 'changeme123' });
-    const iss = await c('POST', '/api/passes', { unitNumber: '1204', visitorPlate: 'RET1' });
+    const iss = await c('POST', '/api/passes', { unitNumber: '1204', visitorPlate: 'RET1', printInstead: true });
     assert.equal(iss.body.tagNumber, 1);
     const ret = await c('POST', '/api/tags/1/return', {});
     assert.equal(ret.status, 200);
@@ -1323,7 +1323,7 @@ test('tag mode: returning a tag frees it and its spot', async () => {
     const board = await c('GET', '/api/tags');
     assert.equal(board.body.find((t) => t.tag_number === 1).status, 'available');
     // Re-issuing now hands out tag 1 again (lowest available).
-    const again = await c('POST', '/api/passes', { unitNumber: '1204', visitorPlate: 'RET2' });
+    const again = await c('POST', '/api/passes', { unitNumber: '1204', visitorPlate: 'RET2', printInstead: true });
     assert.equal(again.body.tagNumber, 1);
   } finally {
     config.tagMode = false;
@@ -1338,11 +1338,11 @@ test('tag mode: per-tag history records each pass and its outcome, newest first'
     const c = makeClient();
     await c('POST', '/api/auth/login', { username: 'security1', password: 'changeme123' });
     // First visitor takes tag 1, then returns it.
-    const first = await c('POST', '/api/passes', { unitNumber: '1204', visitorPlate: 'HIST1' });
+    const first = await c('POST', '/api/passes', { unitNumber: '1204', visitorPlate: 'HIST1', printInstead: true });
     assert.equal(first.body.tagNumber, 1);
     await c('POST', '/api/tags/1/return', {});
     // Second visitor takes tag 1 again and stays active.
-    const second = await c('POST', '/api/passes', { unitNumber: '1204', visitorPlate: 'HIST2' });
+    const second = await c('POST', '/api/passes', { unitNumber: '1204', visitorPlate: 'HIST2', printInstead: true });
     assert.equal(second.body.tagNumber, 1);
 
     const hist = await c('GET', '/api/tags/1/history');
@@ -1358,6 +1358,44 @@ test('tag mode: per-tag history records each pass and its outcome, newest first'
 
     const missing = await c('GET', '/api/tags/99/history');
     assert.equal(missing.status, 404);
+  } finally {
+    config.tagMode = false;
+    await resetTags();
+  }
+});
+
+test('tag mode: issuing requires a visitor email, or printing the copy instead', async () => {
+  config.tagMode = true;
+  await resetTags();
+  try {
+    const c = makeClient();
+    await c('POST', '/api/auth/login', { username: 'security1', password: 'changeme123' });
+
+    // No email and not printing → refused before a tag is claimed.
+    const missing = await c('POST', '/api/passes', { unitNumber: '1204', visitorPlate: 'EM0' });
+    assert.equal(missing.status, 400);
+    assert.equal(missing.body.error, 'visitor_email_required');
+    // The refusal did not consume a tag — all 5 still available.
+    const board0 = await c('GET', '/api/tags');
+    assert.equal(board0.body.filter((t) => t.status === 'available').length, 5);
+
+    // Print-instead is accepted with no email; response flags it for the UI.
+    const printed = await c('POST', '/api/passes', { unitNumber: '1204', visitorPlate: 'EM1', printInstead: true });
+    assert.equal(printed.status, 201, JSON.stringify(printed.body));
+    assert.equal(printed.body.printInstead, true);
+    assert.equal(printed.body.visitorEmail, null);
+    assert.equal(printed.body.emailDelivery, null);
+
+    // A visitor email is stored on the pass; delivery is attempted (SMTP is not
+    // configured under test, so it reports configured:false but lists recipients).
+    const emailed = await c('POST', '/api/passes',
+      { unitNumber: '1204', visitorPlate: 'EM2', visitorEmail: 'guest@example.com' });
+    assert.equal(emailed.status, 201, JSON.stringify(emailed.body));
+    assert.equal(emailed.body.visitorEmail, 'guest@example.com');
+    assert.equal(emailed.body.emailDelivery.configured, false);
+    assert.ok(emailed.body.emailDelivery.recipients.includes('guest@example.com'));
+    const stored = await db.query('SELECT visitor_email FROM visitor_passes WHERE id = $1', [emailed.body.passId]);
+    assert.equal(stored.rows[0].visitor_email, 'guest@example.com');
   } finally {
     config.tagMode = false;
     await resetTags();

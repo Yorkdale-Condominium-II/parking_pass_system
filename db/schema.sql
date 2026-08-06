@@ -410,3 +410,13 @@ INSERT INTO parking_tags (tag_number)
 ALTER TABLE visitor_passes ADD COLUMN IF NOT EXISTS tag_id UUID REFERENCES parking_tags(id);
 CREATE INDEX IF NOT EXISTS idx_pass_tag ON visitor_passes(tag_id);
 COMMIT;
+
+-- ============================================================================
+--  v15 migration — store the visitor's email on the pass. In TAG_MODE the
+--  issue flow auto-emails the printable pass to the visitor and to the unit
+--  owner on file; the officer must supply a visitor email or choose to print
+--  instead. Additive + harmless when the feature/edition is unused.
+-- ============================================================================
+BEGIN;
+ALTER TABLE visitor_passes ADD COLUMN IF NOT EXISTS visitor_email TEXT;
+COMMIT;

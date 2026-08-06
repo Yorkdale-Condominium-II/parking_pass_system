@@ -6,6 +6,8 @@ const { requireAuth, requireRole } = require('./../auth/middleware');
 const passService = require('./../services/passService');
 const { renderPassSheet } = require('./../services/printTemplate');
 const { saveUnitOwner } = require('./../services/unitOwner');
+const passEmail = require('./../services/passEmail');
+const config = require('./../config');
 
 const router = express.Router();
 
@@ -93,10 +95,18 @@ router.post('/', requireAuth, requireRole('security', 'management'), async (req,
     unitNumber, visitorPlate, visitorFirstName, visitorLastName,
     visitorCountry, visitorRegion, durationPreset, durationHours, startsAt,
     override, overrideCode, overrideReason, spotOverride,
-    ownerName, ownerPhone, ownerEmail,
+    ownerName, ownerPhone, ownerEmail, visitorEmail, printInstead,
   } = req.body || {};
   if (!unitNumber || !visitorPlate) {
     return res.status(400).json({ error: 'unit_and_plate_required' });
+  }
+  const wantEmail = String(visitorEmail || '').trim();
+  const willPrint = Boolean(printInstead);
+  // TAG_MODE: the issued pass is emailed on submit, so a visitor email is
+  // required — unless the officer chose to print the copy instead (visitor has
+  // no email). Enforced before issuing so we don't claim a tag on a bad request.
+  if (config.tagMode && !willPrint && !passEmail.looksLikeEmail(wantEmail)) {
+    return res.status(400).json({ error: 'visitor_email_required' });
   }
   try {
     const result = await passService.issuePass({
@@ -114,10 +124,29 @@ router.post('/', requireAuth, requireRole('security', 'management'), async (req,
       overrideCode,
       overrideReason,
       spotOverride: Boolean(spotOverride),
+      visitorEmail: wantEmail || undefined,
     });
     // Capture/refresh the unit owner's contact if the officer entered any.
     await saveUnitOwner({ unitNumber: result.pass.unit_number },
       { name: ownerName, phone: ownerPhone, email: ownerEmail });
+
+    // TAG_MODE: auto-email the printable pass to the visitor + the unit owner on
+    // file. Best-effort — never blocks issuance; inert until SMTP is configured.
+    let emailDelivery = null;
+    if (config.tagMode && !willPrint) {
+      let ownerOnFile = null;
+      try {
+        const ur = await db.query(`SELECT owner_email FROM units WHERE unit_number = $1`,
+          [result.pass.unit_number]);
+        if (ur.rowCount) ownerOnFile = ur.rows[0].owner_email;
+      } catch { /* non-fatal */ }
+      emailDelivery = await passEmail.emailPass(
+        { ...result.pass, issuer_name: req.user.name, issuer_role: req.user.role },
+        [wantEmail, ownerOnFile],
+        { issuerName: req.user.name, issuerRole: req.user.role }
+      );
+    }
+
     res.status(201).json({
       passId: result.pass.id,
       unitNumber: result.pass.unit_number,
@@ -135,6 +164,9 @@ router.post('/', requireAuth, requireRole('security', 'management'), async (req,
       spots: result.spots,
       tagNumber: result.tagNumber,
       printUrl: `/api/passes/${result.pass.id}/print`,
+      visitorEmail: wantEmail || null,
+      printInstead: willPrint,
+      emailDelivery,
     });
   } catch (err) {
     const codeMap = {
@@ -209,23 +241,11 @@ router.post('/:id/email', requireAuth, requireRole('security', 'management'), as
   const pass = await loadPassForDelivery(req.params.id);
   if (!pass) return res.status(404).json({ error: 'pass_not_found' });
 
-  const barcode = require('./../crypto/barcode');
-  const token = barcode.signPass({
-    passId: pass.id, unitNumber: pass.unit_number, visitorPlate: pass.visitor_plate,
-    issuedAt: pass.issued_at, expiresAt: pass.expires_at,
-  });
-  const shortCode = pass.short_code || barcode.shortCodeForPass(pass.id);
-  const { buildPassPdf } = require('./../services/passPdf');
-  const pdf = await buildPassPdf({ pass, token, shortCode, issuerName: pass.issuer_name, issuerRole: pass.issuer_role });
-  const result = await mailer.sendMail({
-    to,
-    subject: `Your visitor parking pass — unit ${pass.unit_number}`,
-    text: `Your visitor parking pass is attached.\nUnit ${pass.unit_number} · plate ${pass.visitor_plate}`
-      + `\nShort code: ${shortCode}\nValid until ${new Date(pass.expires_at).toLocaleString()}.`,
-    attachments: [{ filename: `parking-pass-${shortCode}.pdf`, content: Buffer.from(pdf), contentType: 'application/pdf' }],
-  });
-  if (!result.sent) return res.status(502).json({ error: 'email_send_failed', message: result.error });
-  res.json({ ok: true, emailed: to });
+  const result = await passEmail.emailPass(pass, [to],
+    { issuerName: pass.issuer_name, issuerRole: pass.issuer_role });
+  if (!result.recipients.length) return res.status(400).json({ error: 'email_required' });
+  if (!result.sent.length) return res.status(502).json({ error: 'email_send_failed' });
+  res.json({ ok: true, emailed: result.sent[0] });
 });
 
 // ---------------------------------------------------------------------------

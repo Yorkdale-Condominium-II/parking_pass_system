@@ -36,7 +36,6 @@ async function buildPassPdf({ pass, token, shortCode, issuerName, issuerRole }) 
       ['Visitor name', pass.visitor_name || '—'],
       ['Issued', new Date(pass.issued_at).toLocaleString()],
       ...(scheduled ? [['Valid from', new Date(pass.starts_at).toLocaleString()]] : []),
-      ['Expires', new Date(pass.expires_at).toLocaleString()],
       ['Issued by', `${issuerName} (${issuerRole})`],
     ];
     doc.fontSize(12);
@@ -45,6 +44,20 @@ async function buildPassPdf({ pass, token, shortCode, issuerName, issuerRole }) 
       doc.font('Helvetica').fillColor('#10151c').text(' ' + v);
       doc.moveDown(0.3);
     });
+
+    // Expiry — highlighted like the printable sheet so it can't be missed.
+    doc.moveDown(0.6);
+    const boxY = doc.y;
+    const boxH = 56;
+    doc.save();
+    doc.rect(doc.page.margins.left, boxY, W, boxH).fillAndStroke('#fdecea', '#b3261e');
+    doc.lineWidth(2).rect(doc.page.margins.left + 1, boxY + 1, W - 2, boxH - 2).stroke('#b3261e');
+    doc.fillColor('#b3261e').font('Helvetica-Bold').fontSize(11)
+       .text('EXPIRES — PASS INVALID AFTER', doc.page.margins.left, boxY + 10, { width: W, align: 'center' });
+    doc.fontSize(19)
+       .text(new Date(pass.expires_at).toLocaleString(), doc.page.margins.left, boxY + 28, { width: W, align: 'center' });
+    doc.restore();
+    doc.y = boxY + boxH;
 
     doc.moveDown(1);
     const qrSize = 180;

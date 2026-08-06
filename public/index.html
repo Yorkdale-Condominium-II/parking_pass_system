@@ -139,6 +139,14 @@
 
       <label>Visitor plate <input name="visitorPlate" required></label>
 
+      <div id="visitorEmailWrap" hidden>
+        <label>Visitor email <input name="visitorEmail" id="visitorEmailInput" type="email"
+               placeholder="visitor@example.com"></label>
+        <label class="check"><input type="checkbox" id="noVisitorEmail" name="noVisitorEmail">
+          Visitor has no email — print the pass instead</label>
+        <small class="hint" id="visitorEmailHint">On issue, the pass is emailed to the visitor and to the unit owner on file.</small>
+      </div>
+
       <label>Duration</label>
       <div class="btn-row" id="durationRow">
         <button type="button" class="dur active" data-preset="today">Rest of today (until midnight)</button>

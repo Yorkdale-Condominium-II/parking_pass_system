@@ -5,7 +5,7 @@ A continuation guide for picking this project back up in a new session.
 - **Repo:** `Yorkdale-Condominium-II/parking_pass_system`
 - **Working branch:** `claude/condo-property-management-8f0seo`
 - **Latest commit at handoff:** `8d324ca`
-- **Tests:** `npm test` → 51 integration cases, all passing (needs a Postgres test DB).
+- **Tests:** `npm test` → 52 integration cases, all passing (needs a Postgres test DB).
 
 ---
 
@@ -15,7 +15,7 @@ A continuation guide for picking this project back up in a new session.
 it, `GET /api/settings` returns it (public), and the SPA shows it as a `vX.Y.Z`
 badge in the top-bar header and in the browser tab title. **Bump `package.json`
 with every committed change** so the running build is identifiable at a glance
-(semver: patch for fixes, minor for features). Current: **1.22.0**.
+(semver: patch for fixes, minor for features). Current: **1.23.0**.
 
 ---
 
@@ -46,11 +46,23 @@ is the only behavioural difference.
   every pass that tag has carried — visitor, unit, plate, issuer, and outcome
   (Active / Returned / Revoked), newest first. Derived from `visitor_passes`
   (passes retain `tag_id` after vacate/revoke), so no separate log table.
+- **Auto-email on issue** (v15): the Issue form asks for a **visitor email**
+  (required in TAG_MODE) — or the officer ticks **"Visitor has no email — print
+  the pass instead"**, which skips the email and auto-opens the printable sheet.
+  On submit the pass PDF is emailed to the **visitor** *and* the **unit owner on
+  file** (`units.owner_email`). Best-effort via `src/services/passEmail.js`
+  (builds the PDF once, sends to each recipient, never blocks issuance); inert
+  until SMTP is set, in which case the response reports `emailDelivery:
+  {configured:false,...}` and the UI says so. Server stores the address in
+  `visitor_passes.visitor_email` and enforces the requirement **before** claiming
+  a tag. The emailed PDF (`passPdf.js`) now shows the **expiry in a bold red box**
+  like the printable sheet.
 - **Email / Text the printable QR pass** from the issue screen
-  (`POST /api/passes/:id/email` and `/text`). Email uses the existing mailer;
-  texting is **Twilio** plumbing (`src/services/smsSender.js`) that stays inert
-  until `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` / `TWILIO_FROM` are set — both
-  return **409 (`email_not_configured` / `sms_not_configured`)** until then.
+  (`POST /api/passes/:id/email` and `/text`). Email uses the existing mailer
+  (now via `passEmail`); texting is **Twilio** plumbing
+  (`src/services/smsSender.js`) that stays inert until `TWILIO_ACCOUNT_SID` /
+  `TWILIO_AUTH_TOKEN` / `TWILIO_FROM` are set — both return
+  **409 (`email_not_configured` / `sms_not_configured`)** until then.
   **No NFC** (deliberately deferred).
 - **Isolation:** set `TAGS_DATABASE_URL` in `.env` to give the tag edition its
   own database (fully separate demo data); unset, it shares `DATABASE_URL`.
@@ -182,9 +194,9 @@ Seeded demo logins (dev only): `security1` / `manager1`, pw
 npm install
 # point at a THROWAWAY test DB (the suite truncates tables):
 export TEST_DATABASE_URL='postgres://.../parking_pass_test'
-npm test          # expect 51 passing
+npm test          # expect 52 passing
 ```
-The schema is one idempotent file (`db/schema.sql`) with additive v2–v14
+The schema is one idempotent file (`db/schema.sql`) with additive v2–v15
 migration blocks; `npm run migrate` re-applies safely. The tag tests flip
 `config.tagMode` on/off in-process and reset `parking_tags` around themselves,
 so the standard-mode tests are unaffected.
@@ -202,9 +214,9 @@ src/services/            quota, spots, passService, printTemplate, passPdf,
 src/routes/              auth, sso, meta, settings, passes, verify, admin, board,
                          resident, requests, spots, desk, tags (TAG_MODE)
 public/                  index.html + app.js (SPA), desk.html/js, resident.html/js, styles.css
-db/schema.sql            schema + v2..v14 idempotent migrations (v14 = parking_tags)
+db/schema.sql            schema + v2..v15 idempotent migrations (v14 = parking_tags, v15 = visitor_email)
 start-tags.bat/stop-tags.bat  launch/stop the TAG_MODE edition on port 3100
-test/integration.test.js 51 end-to-end cases (node:test); last 4 are tag/delivery
+test/integration.test.js 52 end-to-end cases (node:test); last 4 are tag/delivery
 ```
 
 ## 6. Deferred ideas / possible next steps

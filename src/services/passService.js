@@ -218,11 +218,12 @@ async function issuePass(opts) {
       `INSERT INTO visitor_passes
          (unit_id, visitor_plate, visitor_name, visitor_first_name, visitor_last_name,
           visitor_region, issued_by, issued_at, starts_at, expires_at, calendar_year,
-          status, was_override, barcode_sig, tag_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'active',$12,'',$13)
+          status, was_override, barcode_sig, tag_id, visitor_email)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'active',$12,'',$13,$14)
        RETURNING *`,
       [unit.id, plate, fullName, first || null, last || null, regionStored,
-       opts.issuer.id, now, startsAt, expiresAt, year, usedOverride, tag ? tag.id : null]
+       opts.issuer.id, now, startsAt, expiresAt, year, usedOverride, tag ? tag.id : null,
+       opts.visitorEmail ? String(opts.visitorEmail).trim() : null]
     );
     const pass = insertRes.rows[0];
     if (tag) {

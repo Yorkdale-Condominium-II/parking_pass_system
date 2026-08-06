@@ -301,6 +301,25 @@ document.querySelectorAll('#durationRow .dur').forEach((b) => {
   };
 });
 $('#overrideChk').onchange = (e) => { $('#overrideFields').hidden = !e.target.checked; };
+// Summarise what happened with the auto-email on issue (tag edition).
+function autoEmailNote(r) {
+  if (r.printInstead) {
+    return `<p class="msg">🖨 No visitor email — the printable pass has opened for you to print.</p>`;
+  }
+  const d = r.emailDelivery;
+  if (!d) return '';
+  if (!d.configured) {
+    return `<p class="msg">✉️ Email is not set up yet, so nothing was sent. Configure <code>SMTP_*</code> in <code>.env</code> to auto-email passes. (Use “Email pass” once configured.)</p>`;
+  }
+  if (d.sent && d.sent.length) {
+    const failed = d.failed && d.failed.length ? ` · <span style="color:#b3261e">failed: ${d.failed.join(', ')}</span>` : '';
+    return `<p class="msg">✉️ Emailed to <b>${d.sent.join('</b>, <b>')}</b>${failed}</p>`;
+  }
+  if (d.failed && d.failed.length) {
+    return `<p class="msg" style="color:#b3261e">✉️ Email failed for ${d.failed.join(', ')}. Try “Email pass” below.</p>`;
+  }
+  return `<p class="msg">✉️ No email address on file to send to.</p>`;
+}
 $('#issueForm').onsubmit = async (e) => {
   e.preventDefault();
   $('#issueError').textContent = '';
@@ -320,7 +339,14 @@ $('#issueForm').onsubmit = async (e) => {
     ownerName: f.get('ownerName'),
     ownerPhone: f.get('ownerPhone'),
     ownerEmail: f.get('ownerEmail'),
+    visitorEmail: (f.get('visitorEmail') || '').trim(),
+    printInstead: f.get('noVisitorEmail') === 'on',
   };
+  // Tag edition: a visitor email is required unless the officer opts to print.
+  if (tagMode && !body.printInstead && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.visitorEmail)) {
+    $('#issueError').textContent = 'Enter the visitor’s email, or tick "Visitor has no email — print the pass instead".';
+    return;
+  }
   try {
     let r;
     try {
@@ -344,6 +370,7 @@ $('#issueForm').onsubmit = async (e) => {
         <p>Expires: <b>${new Date(r.expiresAt).toLocaleString()}</b></p>
         <p>Verification code: <b style="font-family:monospace;font-size:18px">${r.shortCode}</b></p>
         <p>${q.unlimited ? 'Commercial: unlimited' : `Quota this year: ${q.used}/${q.limit} used`} · Spaces used: ${r.spots ? r.spots.peak + '/' + r.spots.capacity + ' at peak' : ''}</p>
+        ${autoEmailNote(r)}
         <div class="btn-row">
           <a href="${r.printUrl}" target="_blank"><button type="button">🖨 Open printable pass</button></a>
           <button type="button" data-deliver="email" data-id="${r.passId}">✉️ Email pass</button>
@@ -351,11 +378,14 @@ $('#issueForm').onsubmit = async (e) => {
         </div>
         <p class="msg" id="deliverMsg"></p>
       </div>`;
+    // Print-instead: the visitor has no email, so open the printable pass now.
+    if (r.printInstead) window.open(r.printUrl, '_blank');
     e.target.reset();
     $('#overrideFields').hidden = true;
     $('#durationPreset').value = 'today';
     document.querySelectorAll('#durationRow .dur').forEach((x, i) => x.classList.toggle('active', i === 0));
     populateRegions();
+    syncVisitorEmailUI();
     loadNextTag();   // the tag just claimed is gone; show the next one
     loadSpotsBadge();
   } catch (err) {
@@ -922,7 +952,29 @@ async function loadSpotsBadge() {
 }
 // TAG MODE: show which numbered hard-plastic tag the next issued pass will
 // claim (the lowest available), so the concierge knows before clicking Issue.
+// Show the visitor-email + print-instead controls only in the tag edition, and
+// keep the email field's "required" state in sync with the print-instead box.
+function syncVisitorEmailUI() {
+  const wrap = $('#visitorEmailWrap');
+  if (wrap) wrap.hidden = !tagMode;
+  const input = $('#visitorEmailInput');
+  const noEmail = $('#noVisitorEmail');
+  if (!input || !noEmail) return;
+  const printing = noEmail.checked;
+  input.disabled = printing;
+  input.required = tagMode && !printing;
+  if (printing) input.value = '';
+  const hint = $('#visitorEmailHint');
+  if (hint) {
+    hint.textContent = printing
+      ? 'No email will be sent — the printable pass opens automatically when you issue.'
+      : 'On issue, the pass is emailed to the visitor and to the unit owner on file.';
+  }
+}
+$('#noVisitorEmail') && $('#noVisitorEmail').addEventListener('change', syncVisitorEmailUI);
+
 async function loadNextTag() {
+  syncVisitorEmailUI();
   const banner = $('#nextTagBanner');
   if (!banner) return;
   if (!tagMode) { banner.hidden = true; return; }
