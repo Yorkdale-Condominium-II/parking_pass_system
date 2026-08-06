@@ -4,8 +4,8 @@ A continuation guide for picking this project back up in a new session.
 
 - **Repo:** `Yorkdale-Condominium-II/parking_pass_system`
 - **Working branch:** `claude/condo-property-management-8f0seo`
-- **Latest commit at handoff:** `ae68cd9`
-- **Tests:** `npm test` → 42 integration cases, all passing (needs a Postgres test DB).
+- **Latest commit at handoff:** `8d324ca`
+- **Tests:** `npm test` → 50 integration cases, all passing (needs a Postgres test DB).
 
 ---
 
@@ -15,7 +15,39 @@ A continuation guide for picking this project back up in a new session.
 it, `GET /api/settings` returns it (public), and the SPA shows it as a `vX.Y.Z`
 badge in the top-bar header and in the browser tab title. **Bump `package.json`
 with every committed change** so the running build is identifiable at a glance
-(semver: patch for fixes, minor for features). Current: **1.19.0**.
+(semver: patch for fixes, minor for features). Current: **1.20.0**.
+
+---
+
+## 0. Two editions — standard vs. physical-tag (TAG_MODE)
+
+There are now **two ways to run the same codebase**, so the board can compare
+them side by side. Everything below §1 describes the shared system; this section
+is the only behavioural difference.
+
+- **Standard edition** — `start.bat`, port **3000**. Printable/QR passes only.
+  Unchanged; this is the baseline.
+- **Physical-tag edition** — `start-tags.bat`, port **3100**, launched with
+  `TAG_MODE=true`; stop with `stop-tags.bat`. Models the change-room-tag idea:
+  the concierge hands the visitor a **numbered hard-plastic tag** from a finite
+  pool (5, matching the spot capacity).
+
+**What TAG_MODE changes (all gated behind the flag — off = standard system):**
+- Schema **v14**: `parking_tags` pool (5 tags) + `visitor_passes.tag_id`.
+- Issuing a pass claims the **lowest available** tag (`FOR UPDATE SKIP LOCKED`);
+  the issue screen says "Give the visitor **Tag #N**". The pool is a **hard
+  cap** — a 6th concurrent car returns `no_tags_available` (409), even with a
+  spot override. Vacate/revoke/return frees the tag.
+- **Tags board** on the Spots page (`GET /api/tags`) with a per-tag **Return**
+  button (`POST /api/tags/:number/return`) that frees the tag *and* its spot.
+- **Email / Text the printable QR pass** from the issue screen
+  (`POST /api/passes/:id/email` and `/text`). Email uses the existing mailer;
+  texting is **Twilio** plumbing (`src/services/smsSender.js`) that stays inert
+  until `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` / `TWILIO_FROM` are set — both
+  return **409 (`email_not_configured` / `sms_not_configured`)** until then.
+  **No NFC** (deliberately deferred).
+- **Isolation:** set `TAGS_DATABASE_URL` in `.env` to give the tag edition its
+  own database (fully separate demo data); unset, it shares `DATABASE_URL`.
 
 ---
 
@@ -108,6 +140,9 @@ These are built but inert until configured in `.env` (see `.env.example`):
   a Google Sheet via an Apps Script web app. Best-effort, off the critical path.
   Full 5-minute setup + the script to paste is in `docs/GOOGLE_SHEETS.md`.
   Status shows in Manager → Download data.
+- **SMS / Text pass (TAG edition):** set `TWILIO_ACCOUNT_SID`,
+  `TWILIO_AUTH_TOKEN`, `TWILIO_FROM` to enable the "💬 Text pass" button. Uses
+  Twilio's HTTP API directly (no SDK); inert and returns 409 until configured.
 
 ## 3. Run it on the user's PC (Windows)
 
@@ -116,6 +151,12 @@ the server **hidden in the background** → wait until it responds → open the
 browser → **the launcher window closes itself**). The server keeps running after
 the window closes; its output goes to `server.log` / `server.err.log`. To stop
 it, double-click **`stop.bat`** (frees whatever is listening on port 3000).
+
+To run the **physical-tag edition** instead (or alongside), double-click
+**`start-tags.bat`** — same flow on port **3100** with `TAG_MODE=true`; stop it
+with **`stop-tags.bat`**. Its output goes to `server-tags.log` /
+`server-tags.err.log`. Both editions can run at once (3000 and 3100).
+
 First time only, pull manually:
 ```
 cd %USERPROFILE%\Desktop\parking_pass_system
@@ -135,10 +176,12 @@ Seeded demo logins (dev only): `security1` / `manager1`, pw
 npm install
 # point at a THROWAWAY test DB (the suite truncates tables):
 export TEST_DATABASE_URL='postgres://.../parking_pass_test'
-npm test          # expect 42 passing
+npm test          # expect 50 passing
 ```
-The schema is one idempotent file (`db/schema.sql`) with additive v2–v9
-migration blocks; `npm run migrate` re-applies safely.
+The schema is one idempotent file (`db/schema.sql`) with additive v2–v14
+migration blocks; `npm run migrate` re-applies safely. The tag tests flip
+`config.tagMode` on/off in-process and reset `parking_tags` around themselves,
+so the standard-mode tests are unaffected.
 
 ## 5. Code map
 
@@ -148,15 +191,20 @@ src/config.js            env-driven config (quota, spots, sso, etc.)
 src/db.js                pg pool + withTransaction
 src/auth/                password (bcrypt), middleware (JWT, desk session), sso helpers
 src/crypto/barcode.js    HMAC token, short code, weekly override code
-src/services/            quota, spots, passService, printTemplate, passPdf, export, mailer
+src/services/            quota, spots, passService, printTemplate, passPdf,
+                         export, mailer, smsSender (Twilio), backupArchive, sheetsLog
 src/routes/              auth, sso, meta, settings, passes, verify, admin, board,
-                         resident, requests, spots, desk
+                         resident, requests, spots, desk, tags (TAG_MODE)
 public/                  index.html + app.js (SPA), desk.html/js, resident.html/js, styles.css
-db/schema.sql            schema + v2..v9 idempotent migrations
-test/integration.test.js 42 end-to-end cases (node:test)
+db/schema.sql            schema + v2..v14 idempotent migrations (v14 = parking_tags)
+start-tags.bat/stop-tags.bat  launch/stop the TAG_MODE edition on port 3100
+test/integration.test.js 50 end-to-end cases (node:test); last 4 are tag/delivery
 ```
 
 ## 6. Deferred ideas / possible next steps
+- **Tag edition:** wire real Twilio creds and send a test text; consider a
+  "lost tag" workflow (mark a tag lost so it leaves the pool) and printing
+  tag-number labels. NFC is intentionally out of scope for now.
 - Configure + prove real Google (and Microsoft) SSO end-to-end.
 - Configure email (Brevo recommended) and verify an approval email.
 - Per-unit access code for the resident portal (anti-spam) if needed.
@@ -167,8 +215,12 @@ test/integration.test.js 42 end-to-end cases (node:test)
 ## 7. Paste this into the new session to resume
 
 > Continue work on the parking_pass_system repo, branch
-> `claude/condo-property-management-8f0seo`. Read `docs/HANDOFF.md` first for
-> full context. It's a Node/Express + PostgreSQL condo visitor-parking app;
-> 32 integration tests currently pass. I want to work on: <YOUR NEXT TASK>.
-> Follow the existing patterns (idempotent `db/schema.sql` migrations,
-> integration tests in `test/integration.test.js`, commit + push to the branch).
+> `claude/condo-property-management-8f0seo` (the repo's default branch — all
+> history lives here, not the stale `cont-14z83q`). Read `docs/HANDOFF.md` first
+> for full context — start with §0 (the two editions). It's a Node/Express +
+> PostgreSQL condo visitor-parking app at **v1.20.0**; **50** integration tests
+> currently pass. I'm working on the **physical hard-plastic tag edition**
+> (`TAG_MODE`, `start-tags.bat`, port 3100). I want to work on: <YOUR NEXT TASK>.
+> Follow the existing rhythm: build → run `npm test` (must stay green) → bump
+> the version in `package.json` → commit + push to the branch. Keep `db/schema.sql`
+> migrations idempotent and add cases to `test/integration.test.js`.
