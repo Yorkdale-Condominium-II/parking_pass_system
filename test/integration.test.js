@@ -1096,6 +1096,12 @@ test('reset-activity wipes all passes/registry but keeps units and users', async
 
   const reset = await mgr('POST', '/api/admin/reset-activity', { confirm: 'RESET' });
   assert.equal(reset.status, 200);
+  // A pre-delete backup is attempted; without SMTP configured it's not sent.
+  assert.equal(reset.body.backupEmailed, false);
+  // The backup workbook itself builds successfully (mailer is the only no-op).
+  const backupArchive = require('../src/services/backupArchive');
+  const b = await backupArchive.emailFullBackup('test', { username: 'manager1' });
+  assert.equal(b.skipped, true); // built OK, just not sent (no SMTP in tests)
 
   // Everything visitor-related is gone...
   const spots = await mgr('GET', '/api/spots');

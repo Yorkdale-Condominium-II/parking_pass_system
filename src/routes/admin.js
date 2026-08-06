@@ -9,6 +9,7 @@ const barcode = require('./../crypto/barcode');
 const exporter = require('./../services/export');
 const mailer = require('./../services/mailer');
 const sheetsLog = require('./../services/sheetsLog');
+const backupArchive = require('./../services/backupArchive');
 
 const router = express.Router();
 
@@ -565,6 +566,8 @@ router.post('/year-end/clear', async (req, res) => {
   if (!req.body || req.body.confirm !== true) {
     return res.status(400).json({ error: 'confirmation_required' });
   }
+  // Email a full backup of everything BEFORE deleting anything (best-effort).
+  const backup = await backupArchive.emailFullBackup('Year-end clear', req.user);
   const year = new Date().getFullYear();
   const deleted = await db.withTransaction(async (client) => {
     const a = await client.query(`DELETE FROM pass_audit_log WHERE EXTRACT(YEAR FROM created_at) < $1`, [year]);
@@ -579,7 +582,7 @@ router.post('/year-end/clear', async (req, res) => {
     );
     return { passes: d.rowCount, requests: c.rowCount, pass_audit: a.rowCount, auth_audit: b.rowCount };
   });
-  res.json({ ok: true, deleted });
+  res.json({ ok: true, deleted, backupEmailed: Boolean(backup.sent) });
 });
 
 // --- Display settings (company / condo name) -------------------------------
@@ -603,6 +606,7 @@ router.post('/clear-logs', async (req, res) => {
   if (!req.body || req.body.confirm !== true) {
     return res.status(400).json({ error: 'confirmation_required' });
   }
+  const backup = await backupArchive.emailFullBackup('Clear all logs', req.user);
   const deleted = await db.withTransaction(async (client) => {
     // Historical passes = revoked, vacated, or already expired (not live/scheduled).
     const passes = await client.query(
@@ -621,7 +625,7 @@ router.post('/clear-logs', async (req, res) => {
     return { passes: passes.rowCount, requests: requests.rowCount,
              pass_audit: passAudit.rowCount, auth_audit: authAudit.rowCount };
   });
-  res.json({ ok: true, deleted });
+  res.json({ ok: true, deleted, backupEmailed: Boolean(backup.sent) });
 });
 
 // --- Full clean slate (reset all visitor activity) -------------------------
@@ -635,6 +639,7 @@ router.post('/reset-activity', async (req, res) => {
   if (!req.body || req.body.confirm !== 'RESET') {
     return res.status(400).json({ error: 'confirmation_required' });
   }
+  const backup = await backupArchive.emailFullBackup('Full reset of all visitor data', req.user);
   await db.withTransaction(async (client) => {
     await client.query(
       `TRUNCATE pass_requests, pass_audit_log, auth_audit_log, override_grants,
@@ -647,7 +652,7 @@ router.post('/reset-activity', async (req, res) => {
       [req.user.id, { note: 'all visitor passes, requests, logs and vehicle registry cleared' }]
     );
   });
-  res.json({ ok: true });
+  res.json({ ok: true, backupEmailed: Boolean(backup.sent) });
 });
 
 // --- Optional integration status (email / Google Sheets mirror) ------------

@@ -224,7 +224,7 @@
     <h1>System Management</h1>
     <div id="yearEndBanner" class="banner" hidden></div>
 
-    <details class="card sect" id="settingsCard" open>
+    <details class="card sect" id="settingsCard">
       <summary><h2>Settings</h2></summary>
       <form id="settingsForm" class="inline">
         <input name="orgName" id="orgNameInput" placeholder="Company / Condo name" style="max-width:360px">
@@ -234,7 +234,13 @@
       <p class="msg" id="settingsMsg"></p>
     </details>
 
-    <details class="card sect" open>
+    <details class="card sect" id="overrideCodeCard">
+      <summary><h2>This week's override code</h2></summary>
+      <p class="hint">Share with staff only to authorize a quota override. Rotates automatically each week.</p>
+      <div id="overrideCodeBox">…</div>
+    </details>
+
+    <details class="card sect">
       <summary><h2>Create user</h2></summary>
       <form id="userForm">
         <label>Username <input name="username" required></label>
@@ -252,7 +258,7 @@
       </form>
     </details>
 
-    <details class="card sect" open>
+    <details class="card sect">
       <summary><h2>Add unit</h2></summary>
       <form id="unitForm">
         <label>Type
@@ -269,14 +275,14 @@
       </form>
     </details>
 
-    <details class="card sect" id="manageUsersCard" open>
+    <details class="card sect" id="manageUsersCard">
       <summary><h2>Manage users</h2></summary>
       <button type="button" id="refreshUsers">Refresh</button>
       <div id="usersTable"></div>
       <div id="userHistory"></div>
     </details>
 
-    <details class="card sect" id="exportCard" open>
+    <details class="card sect" id="exportCard">
       <summary><h2>Download data</h2></summary>
       <p class="hint">CSV and Excel files open directly in Excel and Google Sheets (File → Import).</p>
       <div class="inline">
@@ -291,44 +297,38 @@
       <p class="hint" id="sheetsStatus" style="margin-bottom:0"></p>
     </details>
 
-    <details class="card sect" id="yearEndCard" open>
+    <details class="card sect" id="yearEndCard">
       <summary><h2>Year-end archive</h2></summary>
       <div id="yearEndBox">…</div>
     </details>
 
-    <details class="card sect" id="clearLogsCard" open>
+    <details class="card sect" id="clearLogsCard">
       <summary><h2>Clear all logs</h2></summary>
       <p class="hint">⚠ Deletes all audit logs and completed/historical passes and requests (live and scheduled passes, and pending requests, are kept). This erases the per-user history. Download your data first — this cannot be undone.</p>
       <button type="button" id="clearLogsBtn" class="danger">Clear all logs now</button>
       <p class="msg" id="clearLogsMsg"></p>
     </details>
 
-    <details class="card sect" id="resetActivityCard" open>
+    <details class="card sect" id="resetActivityCard">
       <summary><h2>Reset all visitor data</h2></summary>
       <p class="hint">⚠ Full clean slate — deletes <b>every</b> pass (including live and future-scheduled ones), all requests, all logs, and the resident/vehicle registry. Your <b>units</b> and <b>user accounts</b> are kept. Intended for clearing test data before go-live. This cannot be undone — export first.</p>
       <button type="button" id="resetActivityBtn" class="danger">Reset all visitor data…</button>
       <p class="msg" id="resetActivityMsg"></p>
     </details>
 
-    <details class="card sect" id="overrideCodeCard" open>
-      <summary><h2>This week's override code</h2></summary>
-      <p class="hint">Share with staff only to authorize a quota override. Rotates automatically each week.</p>
-      <div id="overrideCodeBox">…</div>
-    </details>
-
-    <details class="card sect" open>
+    <details class="card sect">
       <summary><h2>Pass audit log</h2></summary>
       <button id="refreshAudit">Refresh</button>
       <div id="auditTable"></div>
     </details>
 
-    <details class="card sect" open>
+    <details class="card sect">
       <summary><h2>Sign-in audit log</h2></summary>
       <button id="refreshAuthAudit">Refresh</button>
       <div id="authAuditTable"></div>
     </details>
 
-    <details class="card sect" id="unitImportForm-sect" open>
+    <details class="card sect" id="unitImportForm-sect">
       <summary><h2>Bulk import units</h2></summary>
       <form id="unitImportForm">
         <p class="hint">Upload an <b>Excel (.xlsx)</b> or <b>CSV</b> file, or paste rows below. Re-running is safe — existing units are updated in place. Two layouts are accepted:</p>

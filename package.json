@@ -1,6 +1,6 @@
 {
   "name": "parking_pass_system",
-  "version": "1.17.1",
+  "version": "1.18.0",
   "description": "All-in-one condominium property management platform for visitor parking, resident vehicle registration, and operational oversight.",
   "main": "src/server.js",
   "type": "commonjs",

@@ -544,7 +544,7 @@ $('#clearLogsBtn').onclick = async () => {
   if (!confirm('Final confirmation — clear all logs now?')) return;
   try {
     const r = await api('/admin/clear-logs', { method: 'POST', body: { confirm: true } });
-    $('#clearLogsMsg').textContent = `Cleared: ${r.deleted.pass_audit + r.deleted.auth_audit} log rows, ${r.deleted.passes} historical passes, ${r.deleted.requests} requests.`;
+    $('#clearLogsMsg').textContent = `Cleared: ${r.deleted.pass_audit + r.deleted.auth_audit} log rows, ${r.deleted.passes} historical passes, ${r.deleted.requests} requests.` + backupNote(r);
     loadAudit(); loadAuthAudit(); loadUsers();
   } catch (err) { $('#clearLogsMsg').textContent = err.message; }
 };
@@ -555,8 +555,8 @@ $('#resetActivityBtn').onclick = async () => {
   if (typed === null) return;
   if (typed !== 'RESET') { $('#resetActivityMsg').textContent = 'Not reset — you must type RESET exactly.'; return; }
   try {
-    await api('/admin/reset-activity', { method: 'POST', body: { confirm: 'RESET' } });
-    $('#resetActivityMsg').textContent = 'Done — all visitor passes, requests, logs and the vehicle registry were cleared.';
+    const r = await api('/admin/reset-activity', { method: 'POST', body: { confirm: 'RESET' } });
+    $('#resetActivityMsg').textContent = 'Done — all visitor passes, requests, logs and the vehicle registry were cleared.' + backupNote(r);
     loadAudit(); loadAuthAudit(); loadUsers(); loadUnitsList();
   } catch (err) {
     $('#resetActivityMsg').textContent = err.data?.error === 'superuser_required'
@@ -881,10 +881,16 @@ $('#yearEndBox').addEventListener('click', async (e) => {
   if (!confirm('Final confirmation — permanently delete prior-year records now?')) return;
   try {
     const r = await api('/admin/year-end/clear', { method: 'POST', body: { confirm: true } });
-    $('#yearEndMsg').textContent = `Cleared: ${r.deleted.passes} passes, ${r.deleted.requests} requests, ${r.deleted.pass_audit + r.deleted.auth_audit} audit rows.`;
+    $('#yearEndMsg').textContent = `Cleared: ${r.deleted.passes} passes, ${r.deleted.requests} requests, ${r.deleted.pass_audit + r.deleted.auth_audit} audit rows.` + backupNote(r);
     setTimeout(loadYearEnd, 1200);
   } catch (err) { $('#yearEndMsg').textContent = err.message; }
 });
+// A note appended to destructive-action results about the oversight backup email.
+function backupNote(r) {
+  return r && r.backupEmailed
+    ? ' A full backup was emailed to the oversight contact.'
+    : ' (Backup email not sent — configure email so a full record is archived.)';
+}
 
 // --- Account (all roles) ---
 const ROLE_LABELS = { security: 'Security', management: 'Management' };
