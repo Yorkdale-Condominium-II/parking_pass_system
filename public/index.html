@@ -374,6 +374,16 @@
         <label>Type
           <select name="kind"><option value="residential">Residential</option><option value="commercial">Commercial</option></select>
         </label>
+        <label>Occupancy
+          <select name="occupancy" id="unitEditOccupancy">
+            <option value="owner">Owner-occupied (1 active pass)</option>
+            <option value="tenant">Tenant-shared (1 per tenant)</option>
+          </select>
+        </label>
+        <label id="unitEditTenantWrap" hidden>Number of independent tenants
+          <input name="tenantCount" id="unitEditTenantCount" type="number" min="1" value="1">
+        </label>
+        <small class="hint">Owner-occupied units may hold one active visitor pass at a time; tenant-shared units allow one per tenant.</small>
         <label>Business name <input name="businessName"></label>
         <label>Owner name <input name="ownerName"></label>
         <label>Owner phone <input name="ownerPhone"></label>

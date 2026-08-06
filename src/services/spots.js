@@ -60,4 +60,42 @@ async function evaluateSpots(client, startsAt, expiresAt, excludePassId = null) 
   return { capacity: config.spotCapacity, peak, wouldExceed: peak > config.spotCapacity, liveNow };
 }
 
-module.exports = { evaluateSpots, peakConcurrency };
+/**
+ * Evaluate whether a new pass for one unit would exceed that unit's cap on
+ * simultaneously-active passes (owner-occupied = 1; tenant-shared = tenant
+ * count). Counts only passes whose window overlaps the candidate's, then takes
+ * the peak concurrency including the candidate. Runs inside the issue
+ * transaction, which already holds a FOR UPDATE lock on the unit row (via the
+ * quota check), so concurrent issues for the same unit are serialized.
+ *
+ * @returns {{ limit, peak, wouldExceed, activeNow }}
+ */
+async function evaluateUnitConcurrency(client, unitId, startsAt, expiresAt, limit, excludePassId = null) {
+  const s = new Date(startsAt).getTime();
+  const e = new Date(expiresAt).getTime();
+
+  const rows = await client.query(
+    `SELECT starts_at, expires_at
+       FROM visitor_passes
+      WHERE unit_id = $1 AND status = 'active' AND vacated_at IS NULL
+        AND expires_at > $2 AND starts_at < $3
+        AND ($4::uuid IS NULL OR id <> $4)`,
+    [unitId, new Date(s), new Date(e), excludePassId]
+  );
+
+  const intervals = rows.rows.map((r) => [
+    new Date(r.starts_at).getTime(),
+    new Date(r.expires_at).getTime(),
+  ]);
+  intervals.push([s, e]); // include the candidate
+
+  const peak = peakConcurrency(intervals);
+  const now = Date.now();
+  const activeNow = rows.rows.filter(
+    (r) => new Date(r.starts_at).getTime() <= now && new Date(r.expires_at).getTime() > now
+  ).length;
+
+  return { limit, peak, wouldExceed: peak > limit, activeNow };
+}
+
+module.exports = { evaluateSpots, peakConcurrency, evaluateUnitConcurrency };

@@ -656,11 +656,12 @@ function renderUnitsTable() {
   $('#unitsCount').textContent = `${rows.length} unit${rows.length === 1 ? '' : 's'}${q ? ` (of ${allUnits.length})` : ''}`;
   if (!rows.length) { $('#unitsTable').innerHTML = '<p>No units yet. Add one above or bulk-import.</p>'; return; }
   $('#unitsTable').innerHTML = '<div style="overflow-x:auto"><table>'
-    + '<tr><th>Unit</th><th>Floor</th><th>Type</th><th>Business</th><th>Owner</th><th>Owner phone</th><th>Owner email</th><th></th></tr>'
+    + '<tr><th>Unit</th><th>Floor</th><th>Type</th><th>Occupancy</th><th>Business</th><th>Owner</th><th>Owner phone</th><th>Owner email</th><th></th></tr>'
     + rows.map((u) => `<tr>
         <td>${u.unit_number}</td>
         <td>${u.floor ?? '—'}</td>
         <td>${u.kind === 'commercial' ? 'Commercial' : 'Residential'}</td>
+        <td>${u.occupancy === 'tenant' ? `Tenant ×${u.tenant_count || 1}` : 'Owner (1)'}</td>
         <td>${u.business_name || '—'}</td>
         <td>${u.owner_name || '—'}</td>
         <td>${u.owner_phone || '—'}</td>
@@ -686,6 +687,9 @@ if (_unitsTable) _unitsTable.addEventListener('click', (e) => {
   f.floor.value = u.floor ?? '';
   f.kind.value = u.kind || 'residential';
   f.businessName.value = u.business_name || '';
+  f.occupancy.value = u.occupancy === 'tenant' ? 'tenant' : 'owner';
+  f.tenantCount.value = u.tenant_count || 1;
+  syncUnitOccupancyUI();
   f.ownerName.value = u.owner_name || '';
   f.ownerPhone.value = u.owner_phone || '';
   f.ownerEmail.value = u.owner_email || '';
@@ -693,6 +697,14 @@ if (_unitsTable) _unitsTable.addEventListener('click', (e) => {
   f.hidden = false;
   f.scrollIntoView({ block: 'nearest' });
 });
+// Only tenant-shared units expose the tenant-count input.
+function syncUnitOccupancyUI() {
+  const occ = $('#unitEditOccupancy');
+  const wrap = $('#unitEditTenantWrap');
+  if (occ && wrap) wrap.hidden = occ.value !== 'tenant';
+}
+const _unitEditOccupancy = $('#unitEditOccupancy');
+if (_unitEditOccupancy) _unitEditOccupancy.addEventListener('change', syncUnitOccupancyUI);
 const _unitEditCancel = $('#unitEditCancel');
 if (_unitEditCancel) _unitEditCancel.onclick = () => { $('#unitEditForm').hidden = true; };
 const _unitEditForm = $('#unitEditForm');
@@ -703,6 +715,7 @@ if (_unitEditForm) _unitEditForm.onsubmit = async (e) => {
   try {
     await api(`/admin/units/${encodeURIComponent(f.dataset.unit)}`, { method: 'PATCH', body: {
       floor: g.get('floor'), kind: g.get('kind'), businessName: g.get('businessName'),
+      occupancy: g.get('occupancy'), tenantCount: g.get('tenantCount'),
       ownerName: g.get('ownerName'), ownerPhone: g.get('ownerPhone'), ownerEmail: g.get('ownerEmail'),
     } });
     f.hidden = true;

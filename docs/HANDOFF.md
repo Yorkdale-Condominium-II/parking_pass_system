@@ -5,7 +5,7 @@ A continuation guide for picking this project back up in a new session.
 - **Repo:** `Yorkdale-Condominium-II/parking_pass_system`
 - **Working branch:** `claude/condo-property-management-8f0seo`
 - **Latest commit at handoff:** `8d324ca`
-- **Tests:** `npm test` → 52 integration cases, all passing (needs a Postgres test DB).
+- **Tests:** `npm test` → 55 integration cases, all passing (needs a Postgres test DB).
 
 ---
 
@@ -15,7 +15,7 @@ A continuation guide for picking this project back up in a new session.
 it, `GET /api/settings` returns it (public), and the SPA shows it as a `vX.Y.Z`
 badge in the top-bar header and in the browser tab title. **Bump `package.json`
 with every committed change** so the running build is identifiable at a glance
-(semver: patch for fixes, minor for features). Current: **1.23.0**.
+(semver: patch for fixes, minor for features). Current: **1.24.0**.
 
 ---
 
@@ -94,6 +94,16 @@ Implemented and tested:
 - **5 physical spaces**: building-wide live-occupancy cap with peak-overlap
   check across scheduled windows; **security spot-override**; **Spots** live
   board; **vacate** to free a spot early.
+- **Per-unit active-pass cap** (v16, both editions): each unit has an
+  **occupancy** (`owner`|`tenant`, default `owner`) and **tenant_count**. An
+  owner-occupied unit may hold **1** simultaneously-active visitor pass; a
+  tenant-shared unit allows **one per tenant** (`tenant_count`). Enforced in
+  `passService` via `spots.evaluateUnitConcurrency` (peak overlap of the unit's
+  active, non-vacated passes over the new pass's window) as a **hard cap** — no
+  override — returning **409 `unit_active_limit`**. Separate from the annual
+  quota and the 5-space cap. Existing units default to owner (limit 1); staff
+  set occupancy/tenant count in the Manager console unit editor (also shown as
+  an "Occupancy" column in the units table). Bulk import doesn't set it yet.
 - Verify: camera QR + printed short code + token; verdicts VALID / EXPIRED /
   REVOKED / SCHEDULED / VACATED. **Cancel** a pass from Lookup / Verify / Spots.
 - Cryptographic barcode (HMAC-SHA256 signed token) + human short code.
@@ -194,9 +204,9 @@ Seeded demo logins (dev only): `security1` / `manager1`, pw
 npm install
 # point at a THROWAWAY test DB (the suite truncates tables):
 export TEST_DATABASE_URL='postgres://.../parking_pass_test'
-npm test          # expect 52 passing
+npm test          # expect 55 passing
 ```
-The schema is one idempotent file (`db/schema.sql`) with additive v2–v15
+The schema is one idempotent file (`db/schema.sql`) with additive v2–v16
 migration blocks; `npm run migrate` re-applies safely. The tag tests flip
 `config.tagMode` on/off in-process and reset `parking_tags` around themselves,
 so the standard-mode tests are unaffected.
@@ -214,9 +224,9 @@ src/services/            quota, spots, passService, printTemplate, passPdf,
 src/routes/              auth, sso, meta, settings, passes, verify, admin, board,
                          resident, requests, spots, desk, tags (TAG_MODE)
 public/                  index.html + app.js (SPA), desk.html/js, resident.html/js, styles.css
-db/schema.sql            schema + v2..v15 idempotent migrations (v14 = parking_tags, v15 = visitor_email)
+db/schema.sql            schema + v2..v16 idempotent migrations (v14 = parking_tags, v15 = visitor_email, v16 = unit occupancy cap)
 start-tags.bat/stop-tags.bat  launch/stop the TAG_MODE edition on port 3100
-test/integration.test.js 52 end-to-end cases (node:test); last 4 are tag/delivery
+test/integration.test.js 55 end-to-end cases (node:test); last 4 are tag/delivery
 ```
 
 ## 6. Deferred ideas / possible next steps

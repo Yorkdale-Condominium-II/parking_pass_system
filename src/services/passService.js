@@ -2,7 +2,7 @@
 const db = require('./../db');
 const config = require('./../config');
 const { evaluateQuota } = require('./quota');
-const { evaluateSpots } = require('./spots');
+const { evaluateSpots, evaluateUnitConcurrency } = require('./spots');
 const barcode = require('./../crypto/barcode');
 const regions = require('./../regions');
 const sheetsLog = require('./sheetsLog');
@@ -106,7 +106,7 @@ async function issuePass(opts) {
 
   const result = await db.withTransaction(async (client) => {
     const unitRes = await client.query(
-      `SELECT id, unit_number, kind FROM units WHERE unit_number = $1`,
+      `SELECT id, unit_number, kind, occupancy, tenant_count FROM units WHERE unit_number = $1`,
       [opts.unitNumber]
     );
     if (unitRes.rowCount === 0) {
@@ -188,6 +188,30 @@ async function issuePass(opts) {
         throw e;
       }
       usedSpotOverride = true; // Security confirmed a spot is available
+    }
+
+    // Per-unit active-pass cap: owner-occupied units allow 1 pass at a time;
+    // tenant-shared units allow one per independent tenant. This is a hard rule
+    // (no override) — its purpose is to stop an owner-occupied unit from holding
+    // several simultaneous visitor passes.
+    const activeLimit = unit.occupancy === 'tenant'
+      ? Math.max(1, unit.tenant_count || 1)
+      : 1;
+    const unitConc = await evaluateUnitConcurrency(client, unit.id, startsAt, expiresAt, activeLimit);
+    if (unitConc.wouldExceed) {
+      await audit(client, {
+        action: 'denied', actorId: opts.issuer.id,
+        detail: { unit: unit.unit_number, reason: 'unit_active_limit',
+                  occupancy: unit.occupancy, ...unitConc },
+      });
+      const noun = activeLimit === 1 ? 'pass' : 'passes';
+      const e = new Error(
+        `Unit ${unit.unit_number} is ${unit.occupancy === 'tenant' ? `tenant-shared (${activeLimit} tenants)` : 'owner-occupied'} `
+        + `and may hold at most ${activeLimit} active visitor ${noun} at a time.`
+      );
+      e.code = 'unit_active_limit';
+      e.activeLimit = { limit: activeLimit, occupancy: unit.occupancy, tenantCount: unit.tenant_count, activeNow: unitConc.activeNow };
+      throw e;
     }
 
     // TAG MODE: claim an available numbered tag from the finite pool. SKIP

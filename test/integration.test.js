@@ -87,6 +87,11 @@ test.before(async () => {
   await db.query(
     `INSERT INTO units (unit_number, kind, business_name) VALUES ('C-101','commercial','Corner Cafe Ltd.')`
   );
+  // The per-unit active-pass cap (v16) defaults to owner-occupied = 1. Much of
+  // this suite issues several concurrent passes per unit, so mark the seeded,
+  // pass-issuing units tenant-shared with ample headroom. Dedicated tests below
+  // set occupancy explicitly (and restore) to exercise the cap itself.
+  await db.query(`UPDATE units SET occupancy = 'tenant', tenant_count = 99`);
   const unit = await db.query(`SELECT id FROM units WHERE unit_number = '1204'`);
   const resident = await db.query(
     `INSERT INTO residents (unit_id, full_name, email, phone, is_primary)
@@ -1253,6 +1258,79 @@ test('password reset is refused for a disabled account', async () => {
   assert.equal(n, 0);
   // Re-activate so we don't leave the shared DB in a surprising state.
   await db.query(`UPDATE users SET is_active = TRUE WHERE username = 'security1'`);
+});
+
+// ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+//  Per-unit active-pass cap (v16). occupancy = owner → 1 active pass; tenant →
+//  one per tenant. Uses unit 0805, resetting its occupancy in finally so the
+//  shared fixture (tenant ×99) is restored for later tests.
+// ---------------------------------------------------------------------------
+async function setOccupancy(unit, occupancy, tenantCount) {
+  await db.query(`UPDATE units SET occupancy = $2, tenant_count = $3 WHERE unit_number = $1`,
+    [unit, occupancy, tenantCount]);
+}
+
+test('unit cap: an owner-occupied unit allows only one active pass at a time', async () => {
+  await setOccupancy('0805', 'owner', 1);
+  try {
+    const c = makeClient();
+    await c('POST', '/api/auth/login', { username: 'security1', password: 'changeme123' });
+    const first = await c('POST', '/api/passes', { unitNumber: '0805', visitorPlate: 'OCA1' });
+    assert.equal(first.status, 201, JSON.stringify(first.body));
+    // A second concurrent pass is refused (hard cap, no override path).
+    const second = await c('POST', '/api/passes', { unitNumber: '0805', visitorPlate: 'OCA2' });
+    assert.equal(second.status, 409);
+    assert.equal(second.body.error, 'unit_active_limit');
+    assert.equal(second.body.activeLimit.limit, 1);
+    // Vacating the first frees the slot, so a new pass can be issued.
+    await c('POST', `/api/passes/${first.body.passId}/vacate`, {});
+    const third = await c('POST', '/api/passes', { unitNumber: '0805', visitorPlate: 'OCA3' });
+    assert.equal(third.status, 201, JSON.stringify(third.body));
+  } finally {
+    await setOccupancy('0805', 'tenant', 99);
+  }
+});
+
+test('unit cap: a tenant-shared unit allows one active pass per tenant', async () => {
+  await setOccupancy('0805', 'tenant', 2);
+  try {
+    const c = makeClient();
+    await c('POST', '/api/auth/login', { username: 'security1', password: 'changeme123' });
+    const a = await c('POST', '/api/passes', { unitNumber: '0805', visitorPlate: 'TEN1' });
+    assert.equal(a.status, 201, JSON.stringify(a.body));
+    const b = await c('POST', '/api/passes', { unitNumber: '0805', visitorPlate: 'TEN2' });
+    assert.equal(b.status, 201, JSON.stringify(b.body));
+    // Third concurrent pass exceeds the 2-tenant allocation.
+    const cc = await c('POST', '/api/passes', { unitNumber: '0805', visitorPlate: 'TEN3' });
+    assert.equal(cc.status, 409);
+    assert.equal(cc.body.error, 'unit_active_limit');
+    assert.equal(cc.body.activeLimit.limit, 2);
+  } finally {
+    await setOccupancy('0805', 'tenant', 99);
+  }
+});
+
+test('unit cap: management can set a unit\'s occupancy + tenant count', async () => {
+  try {
+    const mgr = makeClient();
+    await mgr('POST', '/api/auth/login', { username: 'manager1', password: 'changeme123' });
+    const ok = await mgr('PATCH', '/api/admin/units/0805', { occupancy: 'tenant', tenantCount: 3 });
+    assert.equal(ok.status, 200);
+    const list = await mgr('GET', '/api/admin/units');
+    const u = list.body.find((x) => x.unit_number === '0805');
+    assert.equal(u.occupancy, 'tenant');
+    assert.equal(u.tenant_count, 3);
+    // Invalid values are rejected.
+    const bad = await mgr('PATCH', '/api/admin/units/0805', { tenantCount: 0 });
+    assert.equal(bad.status, 400);
+    assert.equal(bad.body.error, 'invalid_tenant_count');
+    const badOcc = await mgr('PATCH', '/api/admin/units/0805', { occupancy: 'squatter' });
+    assert.equal(badOcc.status, 400);
+    assert.equal(badOcc.body.error, 'invalid_occupancy');
+  } finally {
+    await setOccupancy('0805', 'tenant', 99);
+  }
 });
 
 // ---------------------------------------------------------------------------

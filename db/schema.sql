@@ -420,3 +420,18 @@ COMMIT;
 BEGIN;
 ALTER TABLE visitor_passes ADD COLUMN IF NOT EXISTS visitor_email TEXT;
 COMMIT;
+
+-- ============================================================================
+--  v16 migration — per-unit cap on SIMULTANEOUSLY ACTIVE visitor passes, based
+--  on occupancy. An owner-occupied unit may hold 1 active pass at a time; a
+--  tenant-shared unit may hold one per independent tenant (tenant_count). This
+--  is separate from the annual quota and the building-wide 5-space cap.
+--  Existing units default to owner-occupied (limit 1). Additive + idempotent.
+-- ============================================================================
+BEGIN;
+ALTER TABLE units ADD COLUMN IF NOT EXISTS occupancy    TEXT    NOT NULL DEFAULT 'owner';
+ALTER TABLE units ADD COLUMN IF NOT EXISTS tenant_count INTEGER NOT NULL DEFAULT 1;
+-- Guardrails: occupancy is owner|tenant; a unit always has at least 1 tenant.
+UPDATE units SET occupancy = 'owner' WHERE occupancy NOT IN ('owner', 'tenant');
+UPDATE units SET tenant_count = 1 WHERE tenant_count < 1;
+COMMIT;

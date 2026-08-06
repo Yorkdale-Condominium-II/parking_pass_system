@@ -121,11 +121,12 @@ router.post('/issue', deskLimiter, async (req, res) => {
     });
   } catch (err) {
     const codeMap = {
-      unit_not_found: 404, quota_exceeded: 409, spot_full: 409, override_code_invalid: 403,
-      override_reason_required: 400, invalid_plate: 400, invalid_region: 400, invalid_start: 400,
+      unit_not_found: 404, quota_exceeded: 409, spot_full: 409, unit_active_limit: 409,
+      override_code_invalid: 403, override_reason_required: 400, invalid_plate: 400,
+      invalid_region: 400, invalid_start: 400,
     };
     if (codeMap[err.code]) {
-      return res.status(codeMap[err.code]).json({ error: err.code, message: err.message, quota: err.quota, spots: err.spots });
+      return res.status(codeMap[err.code]).json({ error: err.code, message: err.message, quota: err.quota, spots: err.spots, activeLimit: err.activeLimit });
     }
     throw err;
   }

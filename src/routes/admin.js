@@ -190,6 +190,7 @@ router.get('/users/:id/history', async (req, res) => {
 router.get('/units', async (req, res) => {
   const r = await db.query(
     `SELECT u.id, u.unit_number, u.floor, u.kind, u.business_name, u.business_contact,
+            u.occupancy, u.tenant_count,
             COALESCE(u.owner_name,  owner.full_name) AS owner_name,
             COALESCE(u.owner_phone, owner.phone)     AS owner_phone,
             COALESCE(u.owner_email, owner.email)     AS owner_email
@@ -209,7 +210,8 @@ router.get('/units', async (req, res) => {
 
 // Edit a unit: floor / kind / business fields and the owner contact.
 router.patch('/units/:unitNumber', async (req, res) => {
-  const { floor, kind, businessName, businessContact, ownerName, ownerPhone, ownerEmail } = req.body || {};
+  const { floor, kind, businessName, businessContact, ownerName, ownerPhone, ownerEmail,
+          occupancy, tenantCount } = req.body || {};
   const sets = [];
   const params = [];
   const add = (col, val) => { params.push(val); sets.push(`${col} = $${params.length}`); };
@@ -217,6 +219,15 @@ router.patch('/units/:unitNumber', async (req, res) => {
   if (kind !== undefined) {
     if (!['residential', 'commercial'].includes(kind)) return res.status(400).json({ error: 'invalid_kind' });
     add('kind', kind);
+  }
+  if (occupancy !== undefined) {
+    if (!['owner', 'tenant'].includes(occupancy)) return res.status(400).json({ error: 'invalid_occupancy' });
+    add('occupancy', occupancy);
+  }
+  if (tenantCount !== undefined) {
+    const n = parseInt(tenantCount, 10);
+    if (!Number.isInteger(n) || n < 1) return res.status(400).json({ error: 'invalid_tenant_count' });
+    add('tenant_count', n);
   }
   if (businessName !== undefined) add('business_name', (businessName || '').trim() || null);
   if (businessContact !== undefined) add('business_contact', (businessContact || '').trim() || null);
