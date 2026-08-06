@@ -277,3 +277,37 @@ itself, so no separate migrate step is needed.
   only returns aggregates.
 * Barcode secret is distinct from the JWT secret so rotating one doesn't
   invalidate the other.
+
+### Hardening added in v1.24.0
+
+* **Revocable sessions.** Each login JWT carries a random `jti` recorded in an
+  `auth_sessions` table (8-hour expiry). Logout, "sign out other devices"
+  (`POST /api/auth/sessions/revoke-all`), admin revoke
+  (`POST /api/admin/users/:id/sessions/revoke`), and deactivating a user all
+  invalidate sessions **before** the token would otherwise expire.
+* **Live authorization.** `requireAuth` re-reads the user's role and active
+  flag from the database on every request, so a demoted or disabled account
+  loses access immediately instead of at next login.
+* **Tightened CSP.** `script-src 'self'` (no `unsafe-inline`),
+  `script-src-attr 'none'` (blocks inline `on*=` handlers), `object-src 'none'`,
+  `base-uri 'self'`, `frame-ancestors 'none'`. Styles remain inline for now.
+* **Escaped output.** Every server-supplied value rendered into the SPA
+  (visitor names, plates, unit/business names, notes, emails, IPs, error text)
+  is HTML-escaped via a shared `esc()` helper before it reaches `innerHTML`.
+* **Proxy trust is explicit.** `TRUST_PROXY` defaults to `0` (trust no proxy),
+  so `X-Forwarded-For` can't be spoofed unless a real reverse proxy is declared.
+* **Secret hygiene.** `.env` is gitignored (with `.env.*`, `*.log`, `*.err.log`)
+  and a `.githooks/pre-commit` guard refuses to stage a real `.env` or log file
+  (`git config core.hooksPath .githooks`).
+
+### Pass duration model (v1.24.0)
+
+* **Short Stay** — expires after 6 hours **or** at 11 PM property-local,
+  whichever comes first.
+* **Overnight** — expires at 8 AM the following property-local day (for stays
+  that cross midnight and last more than 6 hours).
+* The legacy `today` / `tomorrow_noon` presets are retained so already-issued
+  passes keep verifying and the resident portal stays backward-compatible.
+* **One active pass per unit at a time**, in addition to the existing 10 passes
+  per residential unit per calendar year — a unit can't hold several
+  simultaneous visitor passes. Revoke or vacate the current one first.
