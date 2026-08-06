@@ -221,21 +221,22 @@
 
   <!-- Management: Admin -->
   <section id="view-admin" class="view" hidden>
-    <h1>Yorkdale Manager</h1>
+    <h1>System Management</h1>
     <div id="yearEndBanner" class="banner" hidden></div>
 
-    <div class="card" id="settingsCard">
-      <h2>Settings</h2>
+    <details class="card sect" id="settingsCard" open>
+      <summary><h2>Settings</h2></summary>
       <form id="settingsForm" class="inline">
         <input name="orgName" id="orgNameInput" placeholder="Company / Condo name" style="max-width:360px">
         <button>Save name</button>
       </form>
       <p class="hint">Shown in the top bar and on the login, desk, and resident pages.</p>
       <p class="msg" id="settingsMsg"></p>
-    </div>
-    <div class="cols">
-      <form id="userForm" class="card">
-        <h2>Create user</h2>
+    </details>
+
+    <details class="card sect" open>
+      <summary><h2>Create user</h2></summary>
+      <form id="userForm">
         <label>Username <input name="username" required></label>
         <div class="cols">
           <label>First name <input name="firstName" required></label>
@@ -249,8 +250,11 @@
         <button>Create</button>
         <p class="msg" id="userMsg"></p>
       </form>
-      <form id="unitForm" class="card">
-        <h2>Add unit</h2>
+    </details>
+
+    <details class="card sect" open>
+      <summary><h2>Add unit</h2></summary>
+      <form id="unitForm">
         <label>Type
           <select name="kind" id="unitKind"><option value="residential">Residential</option><option value="commercial">Commercial</option></select>
         </label>
@@ -263,33 +267,70 @@
         <button>Add unit</button>
         <p class="msg" id="unitMsg"></p>
       </form>
-      <div class="card" id="unitsListCard">
-        <h2>All units</h2>
-        <div class="btn-row" style="margin-bottom:10px">
-          <button type="button" id="refreshUnits">Refresh</button>
-          <input id="unitsFilter" placeholder="Filter by unit, floor, business…" style="flex:1;min-width:180px;padding:8px;border:1px solid var(--line);border-radius:6px">
-        </div>
-        <p class="hint" id="unitsCount"></p>
-        <form id="unitEditForm" class="card" hidden style="background:#f6f8fa">
-          <h3 style="margin-top:0">Edit unit <span id="unitEditNumber"></span></h3>
-          <label>Floor <input name="floor" type="number"></label>
-          <label>Type
-            <select name="kind"><option value="residential">Residential</option><option value="commercial">Commercial</option></select>
-          </label>
-          <label>Business name <input name="businessName"></label>
-          <label>Owner name <input name="ownerName"></label>
-          <label>Owner phone <input name="ownerPhone"></label>
-          <label>Owner email <input name="ownerEmail" type="email"></label>
-          <div class="btn-row">
-            <button type="submit">Save</button>
-            <button type="button" id="unitEditCancel">Cancel</button>
-          </div>
-          <p class="msg" id="unitEditMsg"></p>
-        </form>
-        <div id="unitsTable"></div>
+    </details>
+
+    <details class="card sect" id="manageUsersCard" open>
+      <summary><h2>Manage users</h2></summary>
+      <button type="button" id="refreshUsers">Refresh</button>
+      <div id="usersTable"></div>
+      <div id="userHistory"></div>
+    </details>
+
+    <details class="card sect" id="exportCard" open>
+      <summary><h2>Download data</h2></summary>
+      <p class="hint">CSV and Excel files open directly in Excel and Google Sheets (File → Import).</p>
+      <div class="inline">
+        <select id="exportDataset"></select>
+        <select id="exportFormat">
+          <option value="csv">CSV</option>
+          <option value="xlsx">Excel (.xlsx)</option>
+          <option value="pdf">PDF</option>
+        </select>
+        <button type="button" id="exportBtn">Download</button>
       </div>
-      <form id="unitImportForm" class="card">
-        <h2>Bulk import units</h2>
+      <p class="hint" id="sheetsStatus" style="margin-bottom:0"></p>
+    </details>
+
+    <details class="card sect" id="yearEndCard" open>
+      <summary><h2>Year-end archive</h2></summary>
+      <div id="yearEndBox">…</div>
+    </details>
+
+    <details class="card sect" id="clearLogsCard" open>
+      <summary><h2>Clear all logs</h2></summary>
+      <p class="hint">⚠ Deletes all audit logs and completed/historical passes and requests (live and scheduled passes, and pending requests, are kept). This erases the per-user history. Download your data first — this cannot be undone.</p>
+      <button type="button" id="clearLogsBtn" class="danger">Clear all logs now</button>
+      <p class="msg" id="clearLogsMsg"></p>
+    </details>
+
+    <details class="card sect" id="resetActivityCard" open>
+      <summary><h2>Reset all visitor data</h2></summary>
+      <p class="hint">⚠ Full clean slate — deletes <b>every</b> pass (including live and future-scheduled ones), all requests, all logs, and the resident/vehicle registry. Your <b>units</b> and <b>user accounts</b> are kept. Intended for clearing test data before go-live. This cannot be undone — export first.</p>
+      <button type="button" id="resetActivityBtn" class="danger">Reset all visitor data…</button>
+      <p class="msg" id="resetActivityMsg"></p>
+    </details>
+
+    <details class="card sect" id="overrideCodeCard" open>
+      <summary><h2>This week's override code</h2></summary>
+      <p class="hint">Share with staff only to authorize a quota override. Rotates automatically each week.</p>
+      <div id="overrideCodeBox">…</div>
+    </details>
+
+    <details class="card sect" open>
+      <summary><h2>Pass audit log</h2></summary>
+      <button id="refreshAudit">Refresh</button>
+      <div id="auditTable"></div>
+    </details>
+
+    <details class="card sect" open>
+      <summary><h2>Sign-in audit log</h2></summary>
+      <button id="refreshAuthAudit">Refresh</button>
+      <div id="authAuditTable"></div>
+    </details>
+
+    <details class="card sect" id="unitImportForm-sect" open>
+      <summary><h2>Bulk import units</h2></summary>
+      <form id="unitImportForm">
         <p class="hint">Upload an <b>Excel (.xlsx)</b> or <b>CSV</b> file, or paste rows below. Re-running is safe — existing units are updated in place. Two layouts are accepted:</p>
         <ul class="hint" style="margin-top:0">
           <li><b>List</b> — a header row then one unit per line. Columns: <code>unit_number, floor, kind, business_name, business_contact, notes</code> (only <code>unit_number</code> is required; <code>kind</code> defaults to residential).</li>
@@ -302,62 +343,33 @@
         <button>Import units</button>
         <p class="msg" id="unitImportMsg"></p>
       </form>
-    </div>
+    </details>
 
-    <div class="card" id="manageUsersCard">
-      <h2>Manage users</h2>
-      <button type="button" id="refreshUsers">Refresh</button>
-      <div id="usersTable"></div>
-      <div id="userHistory"></div>
-    </div>
-
-    <div class="card" id="exportCard">
-      <h2>Download data</h2>
-      <p class="hint">CSV and Excel files open directly in Excel and Google Sheets (File → Import).</p>
-      <div class="inline">
-        <select id="exportDataset"></select>
-        <select id="exportFormat">
-          <option value="csv">CSV</option>
-          <option value="xlsx">Excel (.xlsx)</option>
-          <option value="pdf">PDF</option>
-        </select>
-        <button type="button" id="exportBtn">Download</button>
+    <details class="card sect" id="unitsListCard">
+      <summary><h2>All units</h2></summary>
+      <div class="btn-row" style="margin-bottom:10px">
+        <button type="button" id="refreshUnits">Refresh</button>
+        <input id="unitsFilter" placeholder="Filter by unit, floor, business…" style="flex:1;min-width:180px;padding:8px;border:1px solid var(--line);border-radius:6px">
       </div>
-      <p class="hint" id="sheetsStatus" style="margin-bottom:0"></p>
-    </div>
-
-    <div class="card" id="yearEndCard">
-      <h2>Year-end archive</h2>
-      <div id="yearEndBox">…</div>
-    </div>
-
-    <div class="card" id="clearLogsCard">
-      <h2>Clear all logs</h2>
-      <p class="hint">⚠ Deletes all audit logs and completed/historical passes and requests (live and scheduled passes, and pending requests, are kept). This erases the per-user history. Download your data first — this cannot be undone.</p>
-      <button type="button" id="clearLogsBtn" class="danger">Clear all logs now</button>
-      <p class="msg" id="clearLogsMsg"></p>
-    </div>
-
-    <div class="card" id="resetActivityCard">
-      <h2>Reset all visitor data</h2>
-      <p class="hint">⚠ Full clean slate — deletes <b>every</b> pass (including live and future-scheduled ones), all requests, all logs, and the resident/vehicle registry. Your <b>units</b> and <b>user accounts</b> are kept. Intended for clearing test data before go-live. This cannot be undone — export first.</p>
-      <button type="button" id="resetActivityBtn" class="danger">Reset all visitor data…</button>
-      <p class="msg" id="resetActivityMsg"></p>
-    </div>
-
-    <div class="card" id="overrideCodeCard">
-      <h2>This week's override code</h2>
-      <p class="hint">Share with staff only to authorize a quota override. Rotates automatically each week.</p>
-      <div id="overrideCodeBox">…</div>
-    </div>
-
-    <h2>Pass audit log</h2>
-    <button id="refreshAudit">Refresh</button>
-    <div id="auditTable"></div>
-
-    <h2>Sign-in audit log</h2>
-    <button id="refreshAuthAudit">Refresh</button>
-    <div id="authAuditTable"></div>
+      <p class="hint" id="unitsCount"></p>
+      <form id="unitEditForm" class="card" hidden style="background:#f6f8fa">
+        <h3 style="margin-top:0">Edit unit <span id="unitEditNumber"></span></h3>
+        <label>Floor <input name="floor" type="number"></label>
+        <label>Type
+          <select name="kind"><option value="residential">Residential</option><option value="commercial">Commercial</option></select>
+        </label>
+        <label>Business name <input name="businessName"></label>
+        <label>Owner name <input name="ownerName"></label>
+        <label>Owner phone <input name="ownerPhone"></label>
+        <label>Owner email <input name="ownerEmail" type="email"></label>
+        <div class="btn-row">
+          <button type="submit">Save</button>
+          <button type="button" id="unitEditCancel">Cancel</button>
+        </div>
+        <p class="msg" id="unitEditMsg"></p>
+      </form>
+      <div id="unitsTable"></div>
+    </details>
   </section>
 
   <!-- Board: Dashboard -->

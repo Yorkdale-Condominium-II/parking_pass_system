@@ -35,6 +35,18 @@ main { max-width: 960px; margin: 0 auto; padding: 24px 16px; }
 main h1, main h2, main h3 { text-transform: capitalize; }
 main h1 .version, main h2 .version, main h3 .version { text-transform: none; }
 .card { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 20px; margin-bottom: 16px; }
+/* Collapsible admin sections (<details class="card sect">). */
+details.sect > summary {
+  cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px;
+  margin: -20px; padding: 16px 20px; user-select: none;
+}
+details.sect[open] > summary { margin-bottom: 4px; border-bottom: 1px solid var(--line); }
+details.sect > summary::-webkit-details-marker { display: none; }
+details.sect > summary h2 { margin: 0; font-size: 18px; }
+details.sect > summary::before {
+  content: "▸"; color: var(--muted); font-size: 13px; transition: transform .15s ease;
+}
+details.sect[open] > summary::before { transform: rotate(90deg); }
 form label { display: block; margin-bottom: 12px; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
 form input, form select, form textarea { display: block; width: 100%; margin-top: 4px; padding: 10px; border: 1px solid var(--line); border-radius: 6px; font-size: 15px; color: var(--ink); text-transform: none; letter-spacing: normal; }
 form label.check { display: flex; align-items: center; gap: 8px; text-transform: none; }

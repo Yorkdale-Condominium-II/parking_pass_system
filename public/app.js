@@ -25,7 +25,7 @@ const PAGES = {
   lookup:   { label: 'Lookup & Verify',   views: ['lookup', 'verify'] },
   spots:    { label: 'Spots & Dashboard', views: ['spots', 'board'] },
   requests: { label: 'Requests',          views: ['requests'] },
-  admin:    { label: 'Yorkdale Manager',  views: ['admin'] },
+  admin:    { label: 'System Management',  views: ['admin'] },
   account:  { label: 'Account',           views: ['account'] },
 };
 // Page order per role. Issue Pass is the primary (first) tab.
@@ -33,8 +33,9 @@ const ROLE_PAGES = {
   security:   ['issue', 'lookup', 'spots', 'requests', 'account'],
   management: ['issue', 'lookup', 'spots', 'requests', 'admin', 'account'],
 };
-// Pages grouped under a "System Management" label in the nav.
-const SYS_GROUP = ['admin', 'account'];
+// (The former "System Management" nav-group label is retired now that the admin
+// page itself is named "System Management".)
+const SYS_GROUP = [];
 // Dashboard analytics are management-only; every other view is open to any role.
 function canSeeView(v) { return v === 'board' ? !!currentUser && currentUser.role === 'management' : true; }
 const VIEW_LOADERS = {
