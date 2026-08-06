@@ -45,12 +45,40 @@ async function audit(client, { passId, action, actorId, detail }) {
 }
 
 /**
- * Compute a pass expiry from a preset button (or explicit hours).
- *   'today'        -> end of the current local day (23:59:59)
- *   'tomorrow_noon'-> 12:00 local the following day
- * Falls back to durationHours, then the configured default.
+ * Compute a pass expiry from a preset (or explicit hours). All local-time math
+ * is anchored in the property timezone so "11 PM" / "8 AM" stay honest whatever
+ * clock zone the server runs in.
+ *   'short_stay'    -> after shortStayMaxHours (6h) OR the cutoff hour (11 PM
+ *                      local), whichever is sooner.
+ *   'overnight'     -> overnightEndHour (8 AM local) the following day.
+ *   'today'         -> end of the current local day (23:59:59)          [legacy]
+ *   'tomorrow_noon' -> 12:00 local the following day                    [legacy]
+ * Otherwise falls back to durationHours, then the configured default.
  */
 function computeExpiry(base, preset, durationHours) {
+  const tz = config.propertyTz;
+  // Reinterpret the instant as property-local wall time. Because the server's
+  // TZ is pinned to the property TZ (config.js), this round-trips to the same
+  // instant, and setHours() below then edits the correct local fields.
+  const local = new Date(base.toLocaleString('en-US', { timeZone: tz }));
+
+  if (preset === 'short_stay') {
+    const maxLater = new Date(base.getTime() + config.shortStayMaxHours * 60 * 60 * 1000);
+    const cutoff = new Date(local);
+    cutoff.setHours(config.shortStayCutoffHour, 0, 0, 0); // e.g. 23:00 local
+    if (cutoff <= base) cutoff.setDate(cutoff.getDate() + 1); // safety near midnight
+    return maxLater < cutoff ? maxLater : cutoff;
+  }
+
+  if (preset === 'overnight') {
+    const tomorrow = new Date(local);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(config.overnightEndHour, 0, 0, 0); // e.g. 08:00 next local day
+    return tomorrow;
+  }
+
+  // Legacy fallbacks (kept so already-issued passes still verify and the
+  // resident portal's legacy presets keep working).
   if (preset === 'today') {
     const d = new Date(base);
     d.setHours(23, 59, 59, 0);
@@ -63,7 +91,7 @@ function computeExpiry(base, preset, durationHours) {
     d.setHours(12, 0, 0, 0);
     return d;
   }
-  const hours = durationHours || config.defaultPassDurationHours;
+  const hours = durationHours || config.defaultPassDurationHours || 24;
   return new Date(base.getTime() + hours * 3600 * 1000);
 }
 
@@ -102,6 +130,22 @@ async function issuePass(opts) {
     const e = new Error('Unknown province/state for the selected country.');
     e.code = 'invalid_region';
     throw e;
+  }
+
+  // "Overnight" is only meaningful for a stay of more than shortStayMaxHours
+  // that crosses into the next morning. Guard against a too-short overnight
+  // (the operator should use Short Stay instead).
+  if (opts.durationPreset === 'overnight') {
+    const now = new Date();
+    const tentative = computeExpiry(now, 'overnight');
+    const hours = (tentative.getTime() - now.getTime()) / 3600 / 1000;
+    if (hours < config.shortStayMaxHours) {
+      const e = new Error(
+        `Overnight passes must be issued for stays longer than ${config.shortStayMaxHours} hours that cross midnight. Use Short Stay.`
+      );
+      e.code = 'invalid_duration';
+      throw e;
+    }
   }
 
   const result = await db.withTransaction(async (client) => {
@@ -214,16 +258,17 @@ async function issuePass(opts) {
 
     // Insert first to obtain the server-generated id, then derive the signed
     // token and short code that bind to it, and persist them.
+    const durationMode = opts.durationPreset || 'short_stay';
     const insertRes = await client.query(
       `INSERT INTO visitor_passes
          (unit_id, visitor_plate, visitor_name, visitor_first_name, visitor_last_name,
           visitor_region, issued_by, issued_at, starts_at, expires_at, calendar_year,
-          status, was_override, barcode_sig, tag_id, visitor_email)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'active',$12,'',$13,$14)
+          status, was_override, barcode_sig, tag_id, visitor_email, duration_mode)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'active',$12,'',$13,$14,$15)
        RETURNING *`,
       [unit.id, plate, fullName, first || null, last || null, regionStored,
        opts.issuer.id, now, startsAt, expiresAt, year, usedOverride, tag ? tag.id : null,
-       opts.visitorEmail ? String(opts.visitorEmail).trim() : null]
+       opts.visitorEmail ? String(opts.visitorEmail).trim() : null, durationMode]
     );
     const pass = insertRes.rows[0];
     if (tag) {
