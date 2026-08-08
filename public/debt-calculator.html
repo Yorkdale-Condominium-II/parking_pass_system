@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Yorkdale Condominium II — Debt Payoff Calculator</title>
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body data-section="requests">
+<header id="topbar">
+  <div class="brand"><img src="/tyc-logo.svg" alt="TYC" class="logo"> <span>Debt Payoff Calculator</span> <span class="brand-org" id="brandOrg"></span></div>
+  <div class="who"><span>Financial Tools</span> · <a href="/" style="color:#374151">Staff login</a></div>
+</header>
+
+<main id="app">
+  <section class="view">
+    <h1>Debt Payoff Calculator</h1>
+    <p class="hint">Estimate how long it takes to clear your debts and how much interest you'll pay, using standard amortization. Interest accrues monthly on the remaining balance; minimum payments are applied to every debt, and any extra you add rolls onto the target debt as balances clear. All figures stay on your device — nothing is submitted or saved.</p>
+
+    <form id="debtForm" class="card">
+      <h2>Your Debts</h2>
+      <div id="debtRows"></div>
+      <div class="btn-row">
+        <button type="button" id="addDebt">+ Add another debt</button>
+      </div>
+
+      <h2>Your Plan</h2>
+      <div class="cols">
+        <label>Extra monthly payment
+          <input name="extra" id="extra" type="number" min="0" step="1" value="0" inputmode="decimal">
+        </label>
+        <label>Payoff strategy
+          <select name="strategy" id="strategy">
+            <option value="avalanche">Avalanche — highest interest rate first (least interest)</option>
+            <option value="snowball">Snowball — smallest balance first (fastest wins)</option>
+            <option value="none">Standard — minimum payments only</option>
+          </select>
+        </label>
+      </div>
+      <small class="hint" id="strategyHint"></small>
+
+      <button type="submit">Calculate payoff</button>
+      <p class="error" id="calcError"></p>
+    </form>
+
+    <div id="result"></div>
+  </section>
+</main>
+
+<script src="/debt-calculator.core.js"></script>
+<script src="/debt-calculator.js"></script>
+</body>
+</html>

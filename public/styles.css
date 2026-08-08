@@ -107,6 +107,12 @@ details.card summary + form { margin-top: 12px; }
 .banner { background: #fef3c7; border: 2px solid #f59e0b; color: #7c4a03; padding: 14px 18px; border-radius: 8px; margin-bottom: 16px; }
 .banner b { color: #7c2d12; }
 
+/* Debt payoff calculator — per-debt input rows. */
+.debt-row { position: relative; border: 1px solid var(--line); border-radius: 8px; padding: 14px 14px 2px; margin-bottom: 12px; background: #fbfcfd; }
+.debt-grid { grid-template-columns: repeat(4, 1fr); }
+.debt-row .removeDebt { margin: 0 0 12px; background: #fee2e2; color: var(--danger); border: 1px solid #f3b4b0; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+@media (max-width: 640px) { .debt-grid { grid-template-columns: 1fr 1fr; } }
+
 /* Physical-tag edition (TAG_MODE) */
 #tagsBoard { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
 .tag-card { border-left: 4px solid #6366f1; }
